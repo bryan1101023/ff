@@ -10,7 +10,8 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Gamepad2, CheckCircle } from "lucide-react"
+import { Gamepad2, CheckCircle, Briefcase } from "lucide-react"
+import JobsSection from "./jobs-section"
 
 const pacifico = Pacifico({
   subsets: ["latin"],
@@ -249,7 +250,7 @@ export default function HyreLanding() {
             </p>
           </motion.div>
 
-          <motion.div custom={3} variants={fadeUpVariants} initial="hidden" animate="visible">
+          <motion.div custom={3} variants={fadeUpVariants} initial="hidden" animate="visible" className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Button
               size="lg"
               className="bg-white/5 hover:bg-white/10 text-white border border-white/10 backdrop-blur-sm px-8 py-6 rounded-full transition-all duration-300 shadow-[0_0_15px_rgba(255,255,255,0.1)]"
@@ -257,8 +258,58 @@ export default function HyreLanding() {
             >
               Join the Waitlist
             </Button>
+            <Button
+              size="lg"
+              className="bg-white/5 hover:bg-white/10 text-white border border-white/10 backdrop-blur-sm px-8 py-6 rounded-full transition-all duration-300 shadow-[0_0_15px_rgba(255,255,255,0.1)]"
+              onClick={() => window.location.href = "#jobs"}
+            >
+              <Briefcase className="h-4 w-4 mr-2" />
+              We're Hiring
+            </Button>
           </motion.div>
         </div>
+      </div>
+
+      {/* Jobs Section */}
+      <div id="jobs" className="relative z-10 mt-32 mb-16">
+        <div className="container mx-auto px-4 md:px-6">
+          <div className="max-w-3xl mx-auto text-center mb-12">
+            <motion.div
+              custom={0}
+              variants={fadeUpVariants}
+              initial="hidden"
+              whileInView="visible"
+              viewport={{ once: true }}
+              className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/[0.03] border border-white/[0.08] mb-6"
+            >
+              <Briefcase className="h-5 w-5 text-white/70" />
+              <span className="text-sm text-white/60 tracking-wide">Careers</span>
+            </motion.div>
+
+            <motion.h2 
+              custom={1} 
+              variants={fadeUpVariants} 
+              initial="hidden" 
+              whileInView="visible"
+              viewport={{ once: true }}
+              className="text-3xl sm:text-4xl font-bold mb-4 text-white"
+            >
+              Join Our Team
+            </motion.h2>
+
+            <motion.p 
+              custom={2} 
+              variants={fadeUpVariants} 
+              initial="hidden" 
+              whileInView="visible"
+              viewport={{ once: true }}
+              className="text-white/40 mb-8"
+            >
+              Be part of something special. We're looking for talented individuals to help us build the future of Roblox group management.
+            </motion.p>
+          </div>
+        </div>
+        <JobsSection />
       </div>
 
       <div className="absolute inset-0 bg-gradient-to-t from-[#030303] via-transparent to-[#030303]/80 pointer-events-none" />

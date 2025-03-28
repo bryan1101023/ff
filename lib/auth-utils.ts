@@ -5,7 +5,7 @@ import {
   signOut as firebaseSignOut,
   type UserCredential,
 } from "firebase/auth"
-import { doc, setDoc, getDoc, collection, query, getDocs, arrayUnion } from "firebase/firestore"
+import { doc, setDoc, getDoc, collection, query, getDocs, arrayUnion, where, documentId } from "firebase/firestore"
 
 // User types
 export interface User {
@@ -259,18 +259,19 @@ export async function getUserWorkspaces(uid: string): Promise<any[]> {
       return []
     }
 
-    const workspaces = []
+    // Use batched get to fetch all workspaces at once
+    const workspaceDocs = await getDocs(query(
+      collection(db, "workspaces"),
+      where(documentId(), "in", workspaceIds)
+    ))
 
-    for (const id of workspaceIds) {
-      const workspaceDoc = await getDoc(doc(db, "workspaces", id))
-
-      if (workspaceDoc.exists()) {
-        workspaces.push({
-          id: workspaceDoc.id,
-          ...workspaceDoc.data(),
-        })
-      }
-    }
+    const workspaces: any[] = []
+    workspaceDocs.forEach((doc) => {
+      workspaces.push({
+        id: doc.id,
+        ...doc.data(),
+      })
+    })
 
     return workspaces
   } catch (error) {

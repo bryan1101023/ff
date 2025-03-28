@@ -207,26 +207,28 @@ export default function DashboardPage() {
           return
         }
 
-        // Get user's workspaces
-        const userWorkspaces = await getUserWorkspaces(authUser.uid)
-
-        // Filter workspaces to only show those the user has access to
-        const accessibleWorkspaces = await filterAccessibleWorkspaces(userWorkspaces, authUser.uid, data)
-        setWorkspaces(accessibleWorkspaces)
-
-        // If user has verified their Roblox account, check for workspaces they should have access to
+        // Set loading state first to show loading UI
+        setIsLoading(true)
+        
+        // Load workspaces and check eligibility in parallel if user is verified
         if (data?.robloxVerified && data?.robloxUserId) {
-          // Check for workspaces they should have access to based on their group ranks
-          // @ts-expect-error
-          await checkAndAddToEligibleWorkspaces(authUser.uid, data.robloxUserId)
-
-          // Refresh workspaces after potentially adding the user to new ones
-          const updatedWorkspaces = await getUserWorkspaces(authUser.uid)
-          const updatedAccessibleWorkspaces = await filterAccessibleWorkspaces(updatedWorkspaces, authUser.uid, data)
-          setWorkspaces(updatedAccessibleWorkspaces)
-
+          // Run both operations in parallel
+          const [userWorkspaces] = await Promise.all([
+            getUserWorkspaces(authUser.uid),
+            // @ts-expect-error
+            checkAndAddToEligibleWorkspaces(authUser.uid, data.robloxUserId)
+          ])
+          
+          // Filter workspaces to only show those the user has access to
+          const accessibleWorkspaces = await filterAccessibleWorkspaces(userWorkspaces, authUser.uid, data)
+          setWorkspaces(accessibleWorkspaces)
           setSetupStep(4) // Show dashboard with workspaces
         } else {
+          // Just get workspaces for unverified users
+          const userWorkspaces = await getUserWorkspaces(authUser.uid)
+          const accessibleWorkspaces = await filterAccessibleWorkspaces(userWorkspaces, authUser.uid, data)
+          setWorkspaces(accessibleWorkspaces)
+          
           // User is not verified, show bio verification
           setSetupStep(1) // Bio verification
         }
@@ -241,6 +243,9 @@ export default function DashboardPage() {
     return () => unsubscribe()
   }, [router, robloxUserId])
 
+  // Cache for user groups to avoid repeated API calls
+  const userGroupsCache = new Map<string, any[]>();
+
   // Add this function to filter workspaces based on user's permissions
   const filterAccessibleWorkspaces = async (workspaces: any[], userId: string, userData: any) => {
     // If user is not verified with Roblox, only show workspaces they own
@@ -248,22 +253,36 @@ export default function DashboardPage() {
       return workspaces.filter((workspace) => workspace.ownerId === userId)
     }
 
+    // First, separate workspaces the user owns (these are always accessible)
+    const ownedWorkspaces = workspaces.filter((workspace) => workspace.ownerId === userId);
+    const otherWorkspaces = workspaces.filter((workspace) => workspace.ownerId !== userId);
+    
+    // If there are no other workspaces to check, return owned ones immediately
+    if (otherWorkspaces.length === 0) {
+      return ownedWorkspaces;
+    }
+
     // For verified users, check if they have the required rank for each workspace
     try {
-      // Fetch user's groups and ranks
-      const response = await fetch(`/api/roblox/groups?userId=${userData.robloxUserId}`)
-      if (!response.ok) {
-        // If we can't fetch groups, only show workspaces they own
-        return workspaces.filter((workspace) => workspace.ownerId === userId)
+      // Check cache first
+      let groups;
+      if (userGroupsCache.has(userData.robloxUserId)) {
+        groups = userGroupsCache.get(userData.robloxUserId);
+      } else {
+        // Fetch user's groups and ranks if not in cache
+        const response = await fetch(`/api/roblox/groups?userId=${userData.robloxUserId}`)
+        if (!response.ok) {
+          // If we can't fetch groups, only show workspaces they own
+          return ownedWorkspaces;
+        }
+
+        groups = await response.json();
+        // Store in cache
+        userGroupsCache.set(userData.robloxUserId, groups);
       }
 
-      const groups = await response.json()
-
-      // Filter workspaces based on group membership and rank
-      return workspaces.filter((workspace) => {
-        // Always include workspaces the user owns
-        if (workspace.ownerId === userId) return true
-
+      // Filter other workspaces based on group membership and rank
+      const accessibleOtherWorkspaces = otherWorkspaces.filter((workspace) => {
         // Find if user is in this group
         const matchingGroup = groups.find((g: any) => g.id === workspace.groupId)
         if (!matchingGroup) return false
@@ -272,10 +291,13 @@ export default function DashboardPage() {
         const userRankId = matchingGroup.role.id
         return workspace.allowedRanks?.includes(userRankId) || false
       })
+
+      // Combine owned and accessible workspaces
+      return [...ownedWorkspaces, ...accessibleOtherWorkspaces];
     } catch (error) {
       console.error("Error filtering accessible workspaces:", error)
       // If there's an error, only show workspaces they own
-      return workspaces.filter((workspace) => workspace.ownerId === userId)
+      return ownedWorkspaces;
     }
   }
 
@@ -1040,6 +1062,14 @@ export default function DashboardPage() {
                 </CardContent>
               </Card>
             </motion.div>
+          ) : isLoading ? (
+            <div className="max-w-md mx-auto text-center py-12">
+              <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
+              <h2 className="text-xl font-bold text-white mb-2">Loading Your Workspaces</h2>
+              <p className="text-gray-400 mb-6">
+                Just a moment while we fetch your workspaces...
+              </p>
+            </div>
           ) : workspaces.length === 0 ? (
             <div className="max-w-md mx-auto text-center py-12">
               <div className="text-6xl mb-4">😔</div>

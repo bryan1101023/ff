@@ -305,12 +305,6 @@ export default function WorkspaceFeed({ workspaceId, workspaceName }: WorkspaceF
         return;
       }
       
-      // Show immediate thank you message
-      toast({
-        title: "Thank you for your report!",
-        description: "We're processing your report...",
-      });
-      
       // Close the modal immediately
       setIsReportModalOpen(false);
       setReportReason("");
@@ -330,36 +324,50 @@ export default function WorkspaceFeed({ workspaceId, workspaceName }: WorkspaceF
         containsBadWords: containsBadWord
       });
       
-      // If bad words are detected, wait 5 seconds, then issue a warning and edit the message
-      if (containsBadWord && selectedMessage.userId) {
-        // Use setTimeout to wait 5 seconds
-        setTimeout(async () => {
-          try {
-            // Issue a warning to the user who sent the message
-            await warnUser(selectedMessage.userId, "Your message in workspace chat contained inappropriate language. Please review our community guidelines.");
-            
-            console.log("Warning issued to user:", selectedMessage.userId);
-            
-            // Edit the message content to [CONTENT DELETED]
-            await updateDoc(doc(db, "feed-messages", selectedMessage.id), {
-              content: "[CONTENT DELETED]",
-              isEdited: true,
-              editedAt: serverTimestamp(),
-              editReason: "Content removed due to violation of community guidelines"
-            });
-            
-            console.log("Message content deleted:", selectedMessage.id);
-            
-            // Show confirmation that action was taken
-            toast({
-              title: "Action Taken",
-              description: "The reported message has been removed and the user has been warned.",
-              variant: "destructive",
-            });
-          } catch (error) {
-            console.error("Error processing violation after delay:", error);
-          }
-        }, 5000); // 5 seconds delay
+      // Show appropriate message based on whether bad words were found
+      if (containsBadWord) {
+        toast({
+          title: "Thank you for your report!",
+          description: "We've detected inappropriate content and will take action.",
+        });
+        
+        // If bad words are detected, wait 5 seconds, then issue a warning and edit the message
+        if (selectedMessage.userId) {
+          // Use setTimeout to wait 5 seconds
+          setTimeout(async () => {
+            try {
+              // Issue a warning to the user who sent the message
+              await warnUser(selectedMessage.userId, "Your message in workspace chat contained inappropriate language. Please review our community guidelines.");
+              
+              console.log("Warning issued to user:", selectedMessage.userId);
+              
+              // Edit the message content to [CONTENT DELETED]
+              await updateDoc(doc(db, "feed-messages", selectedMessage.id), {
+                content: "[CONTENT DELETED]",
+                isEdited: true,
+                editedAt: serverTimestamp(),
+                editReason: "Content removed due to violation of community guidelines"
+              });
+              
+              console.log("Message content deleted:", selectedMessage.id);
+              
+              // Show confirmation that action was taken
+              toast({
+                title: "Action Taken",
+                description: "The reported message has been removed and the user has been warned.",
+                variant: "destructive",
+              });
+            } catch (error) {
+              console.error("Error processing violation after delay:", error);
+            }
+          }, 5000); // 5 seconds delay
+        }
+      } else {
+        // No bad words found, just acknowledge the report
+        toast({
+          title: "Report Received",
+          description: "Thank you for your report. No inappropriate content was detected, so no action will be taken.",
+        });
       }
       
       setSelectedMessage(null);
