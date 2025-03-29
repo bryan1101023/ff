@@ -5,7 +5,7 @@ import {
   signOut as firebaseSignOut,
   type UserCredential,
 } from "firebase/auth"
-import { doc, setDoc, getDoc, collection, query, getDocs, arrayUnion, where, documentId } from "firebase/firestore"
+import { doc, setDoc, getDoc, collection, query, getDocs, arrayUnion, where, documentId, orderBy, limit } from "firebase/firestore"
 
 // User types
 export interface User {
@@ -13,6 +13,8 @@ export interface User {
   email: string
   username: string
   robloxUsername?: string
+  robloxUserId?: number
+  robloxVerified?: boolean
   selectedGroup?: {
     id: number
     name: string
@@ -21,6 +23,9 @@ export interface User {
   createdAt: number
   isImmune?: boolean
   immuneGrantedAt?: number | null
+  workspaces?: string[]
+  isBanned?: boolean
+  isWarned?: boolean
 }
 
 // Sign up a new user
@@ -259,21 +264,28 @@ export async function getUserWorkspaces(uid: string): Promise<any[]> {
       return []
     }
 
-    // Use batched get to fetch all workspaces at once
-    const workspaceDocs = await getDocs(query(
-      collection(db, "workspaces"),
-      where(documentId(), "in", workspaceIds)
-    ))
+    // Limit to 50 workspaces max to avoid performance issues
+    const batchSize = 10;
+    const workspaces: any[] = [];
+    
+    // Process workspaces in smaller batches for better performance
+    for (let i = 0; i < Math.min(workspaceIds.length, 50); i += batchSize) {
+      const batch = workspaceIds.slice(i, i + batchSize);
+      
+      const workspaceDocs = await getDocs(query(
+        collection(db, "workspaces"),
+        where(documentId(), "in", batch)
+      ));
+      
+      workspaceDocs.forEach((doc) => {
+        workspaces.push({
+          id: doc.id,
+          ...doc.data(),
+        });
+      });
+    }
 
-    const workspaces: any[] = []
-    workspaceDocs.forEach((doc) => {
-      workspaces.push({
-        id: doc.id,
-        ...doc.data(),
-      })
-    })
-
-    return workspaces
+    return workspaces;
   } catch (error) {
     console.error("Error getting user workspaces:", error)
     return []
@@ -534,10 +546,18 @@ export async function checkAndAddToEligibleWorkspaces(userId: string, robloxUser
       return
     }
 
-    // Get all workspaces
-    const workspacesSnapshot = await getDocs(collection(db, "workspaces"))
+    // Get user's current workspaces
+    const userData = await getCurrentUserData(userId)
+    const userWorkspaceIds = userData?.workspaces || []
+    
+    // Get only the most recent 20 workspaces for performance
+    const workspacesSnapshot = await getDocs(query(
+      collection(db, "workspaces"),
+      orderBy("createdAt", "desc"),
+      limit(20)
+    ))
+    
     const allWorkspaces: any[] = []
-
     workspacesSnapshot.forEach((doc) => {
       allWorkspaces.push({
         id: doc.id,
@@ -545,14 +565,14 @@ export async function checkAndAddToEligibleWorkspaces(userId: string, robloxUser
       })
     })
 
-    // Get user's current workspaces
-    const userData = await getCurrentUserData(userId)
-    const userWorkspaceIds = userData?.workspaces || []
+    // Prepare batch updates for better performance
+    const workspaceUpdates: {id: string, members: string[]}[] = [];
+    const userWorkspaceUpdates: string[] = [];
 
     // Check each workspace to see if user should have access
     for (const workspace of allWorkspaces) {
       // Skip if workspace is deleted or user is already a member
-      if (workspace.isDeleted || workspace.members.includes(userId) || userWorkspaceIds.includes(workspace.id)) {
+      if (workspace.isDeleted || workspace.members?.includes(userId) || userWorkspaceIds.includes(workspace.id)) {
         continue
       }
 
@@ -563,27 +583,36 @@ export async function checkAndAddToEligibleWorkspaces(userId: string, robloxUser
         // Check if user's role is in the allowed ranks
         const userRoleId = userGroup.role.id
 
-        if (workspace.allowedRanks.includes(userRoleId)) {
-          // User has appropriate rank, add them to workspace
-          await setDoc(
-            doc(db, "workspaces", workspace.id),
-            {
-              members: arrayUnion(userId),
-            },
-            { merge: true },
-          )
-
-          // Add workspace to user's workspaces
-          await setDoc(
-            doc(db, "users", userId),
-            {
-              workspaces: arrayUnion(workspace.id),
-            },
-            { merge: true },
-          )
-
-          console.log(`Added user ${userId} to workspace ${workspace.id} for group ${workspace.groupName}`)
+        if (workspace.allowedRanks?.includes(userRoleId)) {
+          // Add to batch updates
+          workspaceUpdates.push({
+            id: workspace.id,
+            members: [...(workspace.members || []), userId]
+          });
+          
+          userWorkspaceUpdates.push(workspace.id);
         }
+      }
+    }
+    
+    // Apply updates in batches for better performance
+    if (workspaceUpdates.length > 0) {
+      // Update workspaces in parallel
+      await Promise.all(workspaceUpdates.map(update => 
+        setDoc(
+          doc(db, "workspaces", update.id),
+          { members: update.members },
+          { merge: true }
+        )
+      ));
+      
+      // Update user's workspaces
+      if (userWorkspaceUpdates.length > 0) {
+        await setDoc(
+          doc(db, "users", userId),
+          { workspaces: arrayUnion(...userWorkspaceUpdates) },
+          { merge: true }
+        );
       }
     }
   } catch (error) {

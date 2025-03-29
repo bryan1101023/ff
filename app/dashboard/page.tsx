@@ -190,54 +190,64 @@ export default function DashboardPage() {
     const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
       if (authUser) {
         setUser(authUser)
-
-        // Get additional user data from Firestore
-        const data = await getCurrentUserData(authUser.uid)
-        setUserData(data)
-
-        // Check if user is banned
-        if (data?.isBanned) {
-          router.push("/banned")
-          return
-        }
-
-        // Check if user is warned
-        if (data?.isWarned) {
-          router.push("/warning")
-          return
-        }
-
-        // Set loading state first to show loading UI
         setIsLoading(true)
-        
-        // Load workspaces and check eligibility in parallel if user is verified
-        if (data?.robloxVerified && data?.robloxUserId) {
-          // Run both operations in parallel
-          const [userWorkspaces] = await Promise.all([
-            getUserWorkspaces(authUser.uid),
-            // @ts-expect-error
-            checkAndAddToEligibleWorkspaces(authUser.uid, data.robloxUserId)
-          ])
+
+        try {
+          // Get additional user data from Firestore
+          const data = await getCurrentUserData(authUser.uid)
+          setUserData(data)
+
+          // Check if user is banned
+          if (data?.isBanned) {
+            router.push("/banned")
+            return
+          }
+
+          // Check if user is warned
+          if (data?.isWarned) {
+            router.push("/warning")
+            return
+          }
           
-          // Filter workspaces to only show those the user has access to
-          const accessibleWorkspaces = await filterAccessibleWorkspaces(userWorkspaces, authUser.uid, data)
-          setWorkspaces(accessibleWorkspaces)
-          setSetupStep(4) // Show dashboard with workspaces
-        } else {
-          // Just get workspaces for unverified users
+          // Load workspaces for all users immediately
           const userWorkspaces = await getUserWorkspaces(authUser.uid)
           const accessibleWorkspaces = await filterAccessibleWorkspaces(userWorkspaces, authUser.uid, data)
           setWorkspaces(accessibleWorkspaces)
           
-          // User is not verified, show bio verification
-          setSetupStep(1) // Bio verification
+          if (data?.robloxVerified && data?.robloxUserId) {
+            setSetupStep(4) // Show dashboard with workspaces
+            
+            // Run eligibility check in the background without waiting
+            setTimeout(() => {
+              // Ensure robloxUserId is defined before calling
+              if (data.robloxUserId) {
+                checkAndAddToEligibleWorkspaces(authUser.uid, data.robloxUserId)
+                  .then(() => {
+                  // Refresh workspaces after eligibility check completes
+                  // but don't block the UI
+                  getUserWorkspaces(authUser.uid)
+                    .then(newWorkspaces => {
+                      filterAccessibleWorkspaces(newWorkspaces, authUser.uid, data)
+                        .then(newAccessibleWorkspaces => {
+                          setWorkspaces(newAccessibleWorkspaces)
+                        })
+                    })
+                  })
+              }
+            }, 2000) // Delay eligibility check to prioritize UI loading
+          } else {
+            // User is not verified, show bio verification
+            setSetupStep(1)
+          }
+        } catch (error) {
+          console.error("Error loading dashboard:", error)
+        } finally {
+          setIsLoading(false)
         }
       } else {
         // Not logged in, redirect to beta login
         router.push("/beta")
       }
-
-      setIsLoading(false)
     })
 
     return () => unsubscribe()
@@ -248,6 +258,11 @@ export default function DashboardPage() {
 
   // Add this function to filter workspaces based on user's permissions
   const filterAccessibleWorkspaces = async (workspaces: any[], userId: string, userData: any) => {
+    // If there are no workspaces, return empty array immediately
+    if (!workspaces || workspaces.length === 0) {
+      return [];
+    }
+    
     // If user is not verified with Roblox, only show workspaces they own
     if (!userData?.robloxVerified || !userData?.robloxUserId) {
       return workspaces.filter((workspace) => workspace.ownerId === userId)
@@ -266,23 +281,39 @@ export default function DashboardPage() {
     try {
       // Check cache first
       let groups;
-      if (userGroupsCache.has(userData.robloxUserId)) {
-        groups = userGroupsCache.get(userData.robloxUserId);
+      if (userGroupsCache.has(userData.robloxUserId.toString())) {
+        groups = userGroupsCache.get(userData.robloxUserId.toString());
       } else {
-        // Fetch user's groups and ranks if not in cache
-        const response = await fetch(`/api/roblox/groups?userId=${userData.robloxUserId}`)
-        if (!response.ok) {
-          // If we can't fetch groups, only show workspaces they own
+        // Set a timeout to prevent long-running requests
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Request timeout')), 1500)
+        );
+        
+        try {
+          // Race between the fetch and the timeout
+          const response = await Promise.race([
+            fetch(`/api/roblox/groups?userId=${userData.robloxUserId}`),
+            timeoutPromise
+          ]) as Response;
+          
+          if (!response.ok) {
+            return ownedWorkspaces;
+          }
+          
+          groups = await response.json();
+          // Store in cache
+          userGroupsCache.set(userData.robloxUserId.toString(), groups);
+        } catch (error) {
+          console.error("Error or timeout fetching groups:", error);
           return ownedWorkspaces;
         }
-
-        groups = await response.json();
-        // Store in cache
-        userGroupsCache.set(userData.robloxUserId, groups);
       }
 
+      // Limit the number of workspaces we process for performance
+      const limitedOtherWorkspaces = otherWorkspaces.slice(0, 10);
+      
       // Filter other workspaces based on group membership and rank
-      const accessibleOtherWorkspaces = otherWorkspaces.filter((workspace) => {
+      const accessibleOtherWorkspaces = limitedOtherWorkspaces.filter((workspace) => {
         // Find if user is in this group
         const matchingGroup = groups.find((g: any) => g.id === workspace.groupId)
         if (!matchingGroup) return false
@@ -430,6 +461,12 @@ export default function DashboardPage() {
 
   // Update the handleRanksSelected function to include the group icon
   const handleRanksSelected = async (ranks: number[]) => {
+    // Prevent multiple clicks from creating multiple workspaces
+    if (isCreatingWorkspace) {
+      return
+    }
+    
+    setIsCreatingWorkspace(true)
     setSelectedRanks(ranks)
     setCreatingWorkspaceError(null)
 
@@ -453,6 +490,7 @@ export default function DashboardPage() {
     } catch (error) {
       console.error("Error creating workspace:", error)
       setCreatingWorkspaceError("Failed to create workspace. Please try again.")
+      setIsCreatingWorkspace(false) // Reset creation state on error
       // Stay on the current step
     }
   }
@@ -463,6 +501,11 @@ export default function DashboardPage() {
       try {
         const userWorkspaces = await getUserWorkspaces(user.uid)
         setWorkspaces(userWorkspaces)
+        
+        // If we have a workspaceId, redirect to that workspace
+        if (workspaceId) {
+          router.push(`/workspace/${workspaceId}`)
+        }
       } catch (error) {
         console.error("Error fetching workspaces:", error)
       }

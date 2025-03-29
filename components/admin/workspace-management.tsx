@@ -28,10 +28,14 @@ import {
   createWorkspaceRestrictedNotification,
 } from "@/lib/notification-utils"
 
-export default function WorkspaceManagement() {
-  const [workspaces, setWorkspaces] = useState<any[]>([])
+interface WorkspaceManagementProps {
+  workspaces: any[];
+  onRefresh: (reset?: boolean) => Promise<void>;
+}
+
+export default function WorkspaceManagement({ workspaces, onRefresh }: WorkspaceManagementProps) {
   const [filteredWorkspaces, setFilteredWorkspaces] = useState<any[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [verificationRequests, setVerificationRequests] = useState<any[]>([])
   const [selectedWorkspace, setSelectedWorkspace] = useState<any>(null)
@@ -45,46 +49,33 @@ export default function WorkspaceManagement() {
   const [workspaceRestrictions, setWorkspaceRestrictions] = useState<{ [key: string]: boolean }>({})
 
   useEffect(() => {
-    const fetchWorkspaces = async () => {
-      setIsLoading(true)
+    // Use the workspaces prop directly instead of fetching them again
+    setFilteredWorkspaces(workspaces)
+    
+    // Only fetch restrictions information for the workspaces
+    const fetchRestrictions = async () => {
       try {
-        const workspacesSnapshot = await getDocs(collection(db, "workspaces"))
-        const workspacesData: any[] = []
         const restrictionsMap: { [key: string]: boolean } = {}
-
-        for (const workspaceDoc of workspacesSnapshot.docs) {
-          const workspaceData = workspaceDoc.data()
-
-          // Get owner info
-          let ownerData = null
-          if (workspaceData.ownerId) {
-            const ownerDoc = await getDoc(doc(db, "users", workspaceData.ownerId))
-            if (ownerDoc.exists()) {
-              ownerData = ownerDoc.data()
-            }
-          }
-
-          // Check if workspace has active restrictions
-          const restrictionDoc = await getDoc(doc(db, "workspaces", workspaceDoc.id, "restrictions", "current"))
-          const hasRestrictions = restrictionDoc.exists() && restrictionDoc.data()?.isActive === true
-          restrictionsMap[workspaceDoc.id] = hasRestrictions
-
-          workspacesData.push({
-            id: workspaceDoc.id,
-            ...workspaceData,
-            owner: ownerData,
-          })
+        
+        // Process in batches of 5 for better performance
+        const batchSize = 5;
+        for (let i = 0; i < workspaces.length; i += batchSize) {
+          const batch = workspaces.slice(i, i + batchSize);
+          
+          // Process each batch in parallel
+          await Promise.all(batch.map(async (workspace) => {
+            const restrictionDoc = await getDoc(doc(db, "workspaces", workspace.id, "restrictions", "current"))
+            restrictionsMap[workspace.id] = restrictionDoc.exists() && restrictionDoc.data()?.isActive === true
+          }))
         }
-
-        setWorkspaces(workspacesData)
-        setFilteredWorkspaces(workspacesData)
+        
         setWorkspaceRestrictions(restrictionsMap)
       } catch (error) {
-        console.error("Error fetching workspaces:", error)
-      } finally {
-        setIsLoading(false)
+        console.error("Error fetching workspace restrictions:", error)
       }
     }
+    
+    fetchRestrictions()
 
     const fetchVerificationRequests = async () => {
       try {
@@ -97,34 +88,50 @@ export default function WorkspaceManagement() {
         const requestsSnapshot = await getDocs(q)
         const requestsData: any[] = []
 
-        for (const requestDoc of requestsSnapshot.docs) {
+        // Process in batches for better performance
+        const requests = requestsSnapshot.docs.slice(0, 10); // Limit to 10 most recent
+        
+        // First, get basic information quickly
+        for (const requestDoc of requests) {
           const requestData = requestDoc.data()
-
-          // Get owner info
-          let ownerData = null
-          if (requestData.ownerId) {
-            const ownerDoc = await getDoc(doc(db, "users", requestData.ownerId))
-            if (ownerDoc.exists()) {
-              ownerData = ownerDoc.data()
-            }
-          }
-
           requestsData.push({
             id: requestDoc.id,
             ...requestData,
-            owner: ownerData,
+            owner: { username: requestData.groupName || "Unknown" }, // Use basic info initially
           })
         }
 
         setVerificationRequests(requestsData)
+        
+        // Then fetch detailed owner info in the background
+        setTimeout(() => {
+          Promise.all(requestsData.map(async (request, index) => {
+            if (request.ownerId) {
+              try {
+                const ownerDoc = await getDoc(doc(db, "users", request.ownerId))
+                if (ownerDoc.exists()) {
+                  const updatedRequest = {
+                    ...request,
+                    owner: ownerDoc.data()
+                  }
+                  return updatedRequest
+                }
+              } catch (error) {
+                console.error("Error fetching owner data:", error)
+              }
+            }
+            return request
+          })).then(updatedRequests => {
+            setVerificationRequests(updatedRequests)
+          })
+        }, 1000)
       } catch (error) {
         console.error("Error fetching verification requests:", error)
       }
     }
 
-    fetchWorkspaces()
     fetchVerificationRequests()
-  }, [])
+  }, [workspaces])
 
   useEffect(() => {
     if (searchQuery.trim() === "") {
@@ -158,8 +165,8 @@ export default function WorkspaceManagement() {
         { merge: true },
       )
 
-      // Update local state
-      setWorkspaces((prev) =>
+      // Update filtered workspaces
+      setFilteredWorkspaces((prev) =>
         prev.map((workspace) =>
           workspace.id === workspaceId
             ? {
@@ -173,6 +180,9 @@ export default function WorkspaceManagement() {
             : workspace,
         ),
       )
+      
+      // Refresh parent workspaces list
+      onRefresh(false)
 
       setVerificationRequests((prev) => prev.filter((request) => request.id !== workspaceId))
 
@@ -215,18 +225,8 @@ export default function WorkspaceManagement() {
         { merge: true },
       )
 
-      // Update local state
-      setWorkspaces((prev) =>
-        prev.map((workspace) =>
-          workspace.id === workspaceId
-            ? {
-                ...workspace,
-                isDeleted: true,
-                deletedAt: Date.now(),
-              }
-            : workspace,
-        ),
-      )
+      // Call onRefresh to update the parent's workspaces list
+      onRefresh(false)
 
       // Update filtered workspaces too
       setFilteredWorkspaces((prev) =>
@@ -279,8 +279,8 @@ export default function WorkspaceManagement() {
 
       // Add duration if provided
       if (duration) {
-        restrictionData.duration = duration
-        restrictionData.expiresAt = new Date(Date.now() + parseDuration(duration))
+        (restrictionData as any).duration = duration
+        (restrictionData as any).expiresAt = new Date(Date.now() + parseDuration(duration.toString()))
       }
 
       await setDoc(doc(db, "workspaces", workspaceToRestrict.id, "restrictions", "current"), restrictionData, {
@@ -339,13 +339,14 @@ export default function WorkspaceManagement() {
       // Send notification to workspace owner
       if (ownerId) {
         // Send regular notification
-        await createNotification(
-          ownerId,
-          `All restrictions have been removed from your workspace "${workspaceName}". You now have full access to all features.`,
-          "workspace",
-          `/workspace/${workspaceId}/settings`,
-          "View Workspace",
-        )
+        await createNotification({
+          userId: ownerId,
+          title: "Restrictions Removed",
+          message: `All restrictions have been removed from your workspace "${workspaceName}". You now have full access to all features.`,
+          type: "success",
+          link: `/workspace/${workspaceId}/settings`,
+          actionText: "View Workspace"
+        })
 
         // Send real-time notification
         await sendRealTimeNotification(ownerId, {
@@ -359,8 +360,7 @@ export default function WorkspaceManagement() {
 
       toast({
         title: "Restrictions removed",
-        description: `All restrictions have been removed from workspace "${workspaceName}".`,
-        variant: "success",
+        description: `All restrictions have been removed from workspace "${workspaceName}".`
       })
     } catch (error) {
       console.error("Error removing restrictions:", error)
@@ -376,7 +376,7 @@ export default function WorkspaceManagement() {
 
   const parseDuration = (durationStr: string): number => {
     const durationLower = durationStr.toLowerCase()
-    const value = Number.parseInt(durationStr)
+    const value = parseInt(durationStr, 10)
 
     if (isNaN(value)) return 0
 

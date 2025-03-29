@@ -88,42 +88,47 @@ export default function AdminPage() {
     }
 
     try {
-      // Fetch users and workspaces in parallel for better performance
-      const [userList, workspacesQuery] = await Promise.all([
-        getAllUsers(),
-        getDocs(query(
-          collection(db, "workspaces"),
-          orderBy("createdAt", "desc"),
-          limit(WORKSPACES_PER_PAGE)
-        ))
-      ])
-      
-      setUsers(userList)
+      // First, quickly fetch and display just the workspaces to improve perceived performance
+      const workspacesQuery = await getDocs(query(
+        collection(db, "workspaces"),
+        orderBy("createdAt", "desc"),
+        limit(WORKSPACES_PER_PAGE)
+      ))
       
       const workspaceList: any[] = []
       workspacesQuery.forEach((doc) => {
         workspaceList.push({
           id: doc.id,
           ...doc.data(),
+          ownerName: "Loading..." // Placeholder until we get user data
         })
       })
       
-      // Check if there are more workspaces to load
+      // Set workspaces immediately so UI shows something quickly
+      setWorkspaces(workspaceList)
       setHasMoreWorkspaces(workspaceList.length === WORKSPACES_PER_PAGE)
-
-      // Add owner names to workspaces
-      const workspacesWithOwners = workspaceList.map((workspace) => {
-        const owner = userList.find((user) => user.uid === workspace.ownerId)
-        return {
-          ...workspace,
-          ownerName: owner ? owner.username : "Unknown",
-        }
+      
+      // Then fetch users in the background
+      getAllUsers().then(userList => {
+        setUsers(userList)
+        
+        // Once we have users, update the workspace list with owner names
+        const workspacesWithOwners = workspaceList.map((workspace) => {
+          const owner = userList.find((user) => user.uid === workspace.ownerId)
+          return {
+            ...workspace,
+            ownerName: owner ? owner.username : "Unknown",
+          }
+        })
+        
+        setWorkspaces(workspacesWithOwners)
+      }).catch(error => {
+        console.error("Error fetching users:", error)
       })
-
-      setWorkspaces(workspacesWithOwners)
     } catch (error) {
-      console.error("Error fetching data:", error)
+      console.error("Error fetching workspaces:", error)
     } finally {
+      // Set loading to false after workspaces are loaded, don't wait for users
       setIsLoading(false)
     }
   }
