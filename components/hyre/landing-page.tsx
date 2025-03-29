@@ -225,7 +225,7 @@ export default function HyreLanding() {
             className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/[0.03] border border-white/[0.08] mb-8 md:mb-12"
           >
             <Gamepad2 className="h-5 w-5 text-white/70" />
-            <span className="text-sm text-white/60 tracking-wide">Hyre</span>
+            <span className="text-sm text-white/60 tracking-wide">Staffify</span>
           </motion.div>
 
           <motion.div custom={1} variants={fadeUpVariants} initial="hidden" animate="visible">
@@ -238,7 +238,7 @@ export default function HyreLanding() {
                   pacifico.className,
                 )}
               >
-                Hyre!
+                Staffify!
               </span>
             </h1>
           </motion.div>

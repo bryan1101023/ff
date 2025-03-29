@@ -11,7 +11,9 @@ export interface Recommendation {
   targetRobloxUserId: string; // Roblox user ID of the person being recommended
   targetRobloxAvatar: string; // Roblox avatar URL of the person being recommended
   currentRank: number; // Current rank in the group
+  currentRankName: string; // Current rank name in the group
   recommendedRank: number; // Recommended rank in the group
+  recommendedRankName: string; // Recommended rank name in the group
   reason: string; // Justification for the recommendation
   supporters: string[]; // Array of user IDs who support this recommendation
   createdAt: any; // Timestamp
@@ -28,7 +30,9 @@ export async function createRecommendation(
   targetRobloxUserId: string,
   targetRobloxAvatar: string,
   currentRank: number,
+  currentRankName: string,
   recommendedRank: number,
+  recommendedRankName: string,
   reason: string
 ): Promise<string> {
   try {
@@ -54,7 +58,9 @@ export async function createRecommendation(
       targetRobloxUserId,
       targetRobloxAvatar,
       currentRank,
+      currentRankName,
       recommendedRank,
+      recommendedRankName,
       reason,
       supporters: [userId], // Creator automatically supports
       createdAt: serverTimestamp(),
@@ -238,30 +244,40 @@ export async function deleteRecommendation(
 // Fetch Roblox user data by username
 export async function fetchRobloxUserByUsername(username: string): Promise<{ id: string, name: string, displayName: string, avatar: string }> {
   try {
-    // First, get the user ID from the username
-    const response = await fetch(`https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(username)}&limit=1`);
-    const data = await response.json();
+    console.log(`Searching for Roblox user: ${username}`);
     
-    if (!data.data || data.data.length === 0) {
-      throw new Error("Roblox user not found");
+    // Use our server-side API route which now uses the correct Roblox API
+    const proxyUrl = `/api/roblox/user?username=${encodeURIComponent(username)}`;
+    console.log(`Using server API: ${proxyUrl}`);
+    
+    const response = await fetch(proxyUrl);
+    
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      console.error(`API error: ${response.status}`, errorText);
+      throw new Error(`Failed to find user: ${response.status}`);
     }
     
-    const userId = data.data[0].id;
+    const userData = await response.json();
+    console.log(`Found user:`, userData);
     
-    // Then get the user details including avatar
-    const userResponse = await fetch(`https://users.roblox.com/v1/users/${userId}`);
-    const userData = await userResponse.json();
+    if (!userData || !userData.id) {
+      throw new Error(`User not found: ${username}`);
+    }
+    
+    const userId = userData.id;
+    const userName = userData.name;
     
     // Get the user's avatar
-    const avatarResponse = await fetch(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${userId}&size=150x150&format=Png`);
-    const avatarData = await avatarResponse.json();
+    const avatarUrl = `https://www.roblox.com/headshot-thumbnail/image?userId=${userId}&width=150&height=150&format=png`;
     
     return {
       id: userId.toString(),
-      name: userData.name,
-      displayName: userData.displayName,
-      avatar: avatarData.data[0].imageUrl
+      name: userName,
+      displayName: userName,
+      avatar: avatarUrl
     };
+  
   } catch (error) {
     console.error("Error fetching Roblox user:", error);
     throw error;
@@ -271,11 +287,27 @@ export async function fetchRobloxUserByUsername(username: string): Promise<{ id:
 // Get group ranks for a specific group
 export async function getGroupRanks(groupId: string): Promise<{ id: number, name: string, rank: number }[]> {
   try {
-    const response = await fetch(`https://groups.roblox.com/v1/groups/${groupId}/roles`);
+    if (!groupId) {
+      console.error("No group ID provided to getGroupRanks");
+      return [];
+    }
+    
+    console.log(`Fetching group ranks for group ID: ${groupId}`);
+    
+    // Use server-side API route to avoid CORS issues
+    const response = await fetch(`/api/roblox/group-roles?groupId=${encodeURIComponent(groupId)}`);
+    
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      console.error(`API error: ${response.status}`, errorText);
+      return []; // Return empty array instead of throwing
+    }
+    
     const data = await response.json();
     
     if (!data.roles) {
-      throw new Error("Failed to fetch group roles");
+      console.warn("No roles found in API response");
+      return [];
     }
     
     return data.roles.map((role: any) => ({
@@ -285,33 +317,43 @@ export async function getGroupRanks(groupId: string): Promise<{ id: number, name
     }));
   } catch (error) {
     console.error("Error fetching group ranks:", error);
-    throw error;
+    return []; // Return empty array instead of throwing
   }
 }
 
 // Get user's current rank in a group
 export async function getUserRankInGroup(userId: string, groupId: string): Promise<{ rankId: number, rankName: string, rank: number }> {
   try {
-    const response = await fetch(`https://groups.roblox.com/v2/users/${userId}/groups/roles`);
-    const data = await response.json();
-    
-    if (!data.data) {
-      throw new Error("Failed to fetch user's groups");
+    if (!userId || !groupId) {
+      console.error(`Missing parameters: userId=${userId}, groupId=${groupId}`);
+      return { rankId: 0, rankName: "Unknown", rank: 0 };
     }
     
-    const group = data.data.find((g: any) => g.group.id.toString() === groupId);
+    console.log(`Fetching rank for user ${userId} in group ${groupId}`);
     
-    if (!group) {
+    // Use server-side API route to avoid CORS issues
+    const response = await fetch(`/api/roblox/user-rank?userId=${encodeURIComponent(userId)}&groupId=${encodeURIComponent(groupId)}`);
+    
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      console.error(`API error: ${response.status}`, errorText);
+      return { rankId: 0, rankName: "Unknown", rank: 0 };
+    }
+    
+    const rankData = await response.json();
+    console.log("User rank data:", rankData);
+    
+    if (!rankData || !rankData.rankName) {
       return { rankId: 0, rankName: "Guest", rank: 0 };
     }
     
     return {
-      rankId: group.role.id,
-      rankName: group.role.name,
-      rank: group.role.rank
+      rankId: rankData.rankId || 0,
+      rankName: rankData.rankName || "Unknown",
+      rank: rankData.rank || 0
     };
   } catch (error) {
     console.error("Error fetching user rank in group:", error);
-    throw error;
+    return { rankId: 0, rankName: "Unknown", rank: 0 }; // Return default value instead of throwing
   }
 }

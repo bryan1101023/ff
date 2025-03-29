@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/components/ui/use-toast"
+import { showToast } from "@/lib/notification-utils"
 import { formatDistanceToNow } from "date-fns"
 import { Send, MoreVertical, Flag, Trash, RefreshCw } from "lucide-react"
 import { 
@@ -73,6 +74,7 @@ interface FeedMessage {
 
 export default function WorkspaceFeed({ workspaceId, workspaceName }: WorkspaceFeedProps) {
   const { user } = useAuth()
+  // Keep the original toast for compatibility
   const { toast } = useToast()
   const [messages, setMessages] = useState<FeedMessage[]>([])
   const [newMessage, setNewMessage] = useState("")
@@ -202,11 +204,10 @@ export default function WorkspaceFeed({ workspaceId, workspaceName }: WorkspaceF
       // Show welcome message on error
       setMessages([dummyWelcomeMessage])
       
-      toast({
-        title: "Error",
-        description: "Failed to load messages. Using offline mode.",
-        variant: "destructive",
-      })
+      showToast(
+        "Error",
+        "Failed to load messages. Using offline mode."
+      )
     })
     
     // Cleanup listener on unmount
@@ -236,11 +237,10 @@ export default function WorkspaceFeed({ workspaceId, workspaceName }: WorkspaceF
       const currentUserId = auth.currentUser?.uid;
       
       if (!currentUserId || !userData) {
-        toast({
-          title: "Authentication Required",
-          description: "You must be logged in to send messages.",
-          variant: "destructive",
-        });
+        showToast(
+          "Authentication Required",
+          "You must be logged in to send messages."
+        );
         setIsSending(false);
         return;
       }
@@ -271,18 +271,17 @@ export default function WorkspaceFeed({ workspaceId, workspaceName }: WorkspaceF
       const docRef = await addDoc(collection(db, "feed-messages"), messageData);
       console.log("Message sent successfully with ID:", docRef.id);
       
-      // Success toast
-      toast({
-        title: "Message Sent",
-        description: "Your message has been sent to the team chat.",
-      });
+      // Success toast with black style
+      showToast(
+        "Message Sent",
+        "Your message has been sent to the team chat."
+      );
     } catch (error) {
       console.error("Error sending message:", error);
-      toast({
-        title: "Error",
-        description: "Failed to send your message. Please try again.",
-        variant: "destructive",
-      });
+      showToast(
+        "Error",
+        "Failed to send your message. Please try again."
+      );
     } finally {
       setIsSending(false);
     }
@@ -297,11 +296,10 @@ export default function WorkspaceFeed({ workspaceId, workspaceName }: WorkspaceF
       const currentUserId = auth.currentUser?.uid;
       
       if (!currentUserId || !userData) {
-        toast({
-          title: "Authentication Required",
-          description: "You must be logged in to report messages.",
-          variant: "destructive",
-        });
+        showToast(
+          "Authentication Required",
+          "You must be logged in to report messages."
+        );
         return;
       }
       
@@ -326,10 +324,10 @@ export default function WorkspaceFeed({ workspaceId, workspaceName }: WorkspaceF
       
       // Show appropriate message based on whether bad words were found
       if (containsBadWord) {
-        toast({
-          title: "Thank you for your report!",
-          description: "We've detected inappropriate content and will take action.",
-        });
+        showToast(
+          "Thank you for your report!",
+          "We've detected inappropriate content and will take action."
+        );
         
         // If bad words are detected, wait 5 seconds, then issue a warning and edit the message
         if (selectedMessage.userId) {
@@ -352,11 +350,10 @@ export default function WorkspaceFeed({ workspaceId, workspaceName }: WorkspaceF
               console.log("Message content deleted:", selectedMessage.id);
               
               // Show confirmation that action was taken
-              toast({
-                title: "Action Taken",
-                description: "The reported message has been removed and the user has been warned.",
-                variant: "destructive",
-              });
+              showToast(
+                "Action Taken",
+                "The reported message has been removed and the user has been warned."
+              );
             } catch (error) {
               console.error("Error processing violation after delay:", error);
             }
@@ -364,21 +361,20 @@ export default function WorkspaceFeed({ workspaceId, workspaceName }: WorkspaceF
         }
       } else {
         // No bad words found, just acknowledge the report
-        toast({
-          title: "Report Received",
-          description: "Thank you for your report. No inappropriate content was detected, so no action will be taken.",
-        });
+        showToast(
+          "Report Received",
+          "Thank you for your report. No inappropriate content was detected, so no action will be taken."
+        );
       }
       
       setSelectedMessage(null);
       
     } catch (error) {
       console.error("Error reporting message:", error);
-      toast({
-        title: "Error",
-        description: "Failed to report the message. Please try again.",
-        variant: "destructive",
-      });
+      showToast(
+        "Error",
+        "Failed to report the message. Please try again."
+      );
     }
   }
   
@@ -392,17 +388,16 @@ export default function WorkspaceFeed({ workspaceId, workspaceName }: WorkspaceF
         isDeleted: true
       })
       
-      toast({
-        title: "Message Deleted",
-        description: "The message has been deleted successfully.",
-      })
+      showToast(
+        "Message Deleted",
+        "The message has been deleted successfully."
+      )
     } catch (error) {
       console.error("Error deleting message:", error)
-      toast({
-        title: "Error",
-        description: "Failed to delete the message. Please try again.",
-        variant: "destructive",
-      })
+      showToast(
+        "Error",
+        "Failed to delete the message. Please try again."
+      )
     }
   }
   
@@ -418,24 +413,24 @@ export default function WorkspaceFeed({ workspaceId, workspaceName }: WorkspaceF
   
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between p-4 border-b">
-        <h2 className="text-xl font-semibold">Team Chat</h2>
-        <div className="text-sm text-muted-foreground">
+      <div className="flex items-center justify-between p-3 sm:p-4 border-b">
+        <h2 className="text-lg sm:text-xl font-semibold">Team Chat</h2>
+        <div className="text-xs sm:text-sm text-muted-foreground">
           {messages.length} messages
         </div>
       </div>
       
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 flex flex-col-reverse">
+      <div className="flex-1 overflow-y-auto p-2 sm:p-4 space-y-3 sm:space-y-4 flex flex-col-reverse">
         {messages.map((message) => (
-          <Card key={message.id} className="mb-4 w-full">
-            <CardHeader className="p-4 pb-2 flex flex-row items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <Avatar>
+          <Card key={message.id} className="mb-2 sm:mb-4 w-full">
+            <CardHeader className="p-3 sm:p-4 pb-1 sm:pb-2 flex flex-row items-center justify-between">
+              <div className="flex items-center space-x-2 sm:space-x-3">
+                <Avatar className="h-8 w-8 sm:h-10 sm:w-10">
                   <AvatarFallback>{getInitials(message.username)}</AvatarFallback>
                 </Avatar>
-                <div>
-                  <p className="font-medium">{message.username}</p>
-                  <p className="text-xs text-muted-foreground">
+                <div className="min-w-0"> {/* Added min-w-0 to allow truncation */}
+                  <p className="font-medium text-sm sm:text-base truncate">{message.username}</p>
+                  <p className="text-xs text-muted-foreground truncate">
                     {message.createdAt instanceof Timestamp 
                       ? formatDistanceToNow(message.createdAt.toDate(), { addSuffix: true })
                       : "Just now"}
@@ -446,8 +441,9 @@ export default function WorkspaceFeed({ workspaceId, workspaceName }: WorkspaceF
               {message.id !== "welcome" && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                      <MoreVertical className="h-4 w-4" />
+                    <Button variant="ghost" size="sm" className="h-6 w-6 sm:h-8 sm:w-8 p-0">
+                      <MoreVertical className="h-3 w-3 sm:h-4 sm:w-4" />
+                      <span className="sr-only">Message options</span>
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
@@ -478,8 +474,8 @@ export default function WorkspaceFeed({ workspaceId, workspaceName }: WorkspaceF
               )}
             </CardHeader>
             
-            <CardContent className="p-4 pt-2">
-              <p className="whitespace-pre-wrap">{message.content}</p>
+            <CardContent className="p-3 sm:p-4 pt-1 sm:pt-2">
+              <p className="whitespace-pre-wrap text-sm sm:text-base">{message.content}</p>
             </CardContent>
             
             {message.isReported && (
@@ -502,15 +498,15 @@ export default function WorkspaceFeed({ workspaceId, workspaceName }: WorkspaceF
         <div ref={messagesEndRef} />
       </div>
       
-      <div className="p-4 border-t bg-background sticky bottom-0">
+      <div className="p-2 sm:p-4 border-t bg-background sticky bottom-0">
         <div className="flex items-end space-x-2">
           <div className="flex-1">
             <Textarea
               placeholder="Type your message here..."
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
-              className="resize-none"
-              rows={3}
+              className="resize-none text-sm sm:text-base"
+              rows={2}
               disabled={isSending}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -525,14 +521,15 @@ export default function WorkspaceFeed({ workspaceId, workspaceName }: WorkspaceF
           <Button 
             onClick={handleSendMessage} 
             disabled={!newMessage.trim() || isSending}
-            className="h-10"
+            className="h-9 sm:h-10 px-2 sm:px-4"
+            size="sm"
           >
             {isSending ? (
-              <RefreshCw className="h-4 w-4 animate-spin" />
+              <RefreshCw className="h-3 w-3 sm:h-4 sm:w-4 animate-spin" />
             ) : (
               <>
-                <Send className="h-4 w-4 mr-2" />
-                Send
+                <Send className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Send</span>
               </>
             )}
           </Button>

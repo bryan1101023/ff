@@ -2,10 +2,9 @@
 
 import { useEffect } from "react"
 import Notification from "@/components/ui/notification"
-import { useToast } from "@/components/ui/use-toast"
+import { showToast } from "@/lib/notification-utils"
 
 export default function WorkspaceNotificationListener() {
-  const { toast } = useToast()
 
   useEffect(() => {
     // Listen for workspace restricted events
@@ -35,26 +34,23 @@ export default function WorkspaceNotificationListener() {
       )
 
       // Mount the notification
-      // Note: In a real implementation, you'd use ReactDOM.render or similar
-      // For this example, we'll use the toast system as a fallback
-      toast({
-        title: "Workspace Restricted",
-        description: `Your workspace "${workspaceName}" has been restricted from using: ${features.join(", ")}. Reason: ${reason}`,
-        variant: "destructive",
-        duration: 10000,
-      })
+      // Use our new black toast style
+      showToast(
+        "Workspace Restricted",
+        `Your workspace "${workspaceName}" has been restricted from using: ${features.join(", ")}. Reason: ${reason}`,
+        10000
+      )
     }
 
     // Listen for workspace unrestricted events
     const handleWorkspaceUnrestricted = (event: CustomEvent) => {
       const { workspaceName } = event.detail
 
-      toast({
-        title: "Restrictions Removed",
-        description: `All restrictions have been removed from your workspace "${workspaceName}".`,
-        variant: "success",
-        duration: 5000,
-      })
+      showToast(
+        "Restrictions Removed",
+        `All restrictions have been removed from your workspace "${workspaceName}".`,
+        5000
+      )
     }
 
     // Add event listeners
@@ -66,7 +62,7 @@ export default function WorkspaceNotificationListener() {
       window.removeEventListener("workspace-restricted", handleWorkspaceRestricted as EventListener)
       window.removeEventListener("workspace-unrestricted", handleWorkspaceUnrestricted as EventListener)
     }
-  }, [toast])
+  }, [])
 
   return null // This component doesn't render anything
 }

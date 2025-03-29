@@ -10,7 +10,7 @@ import RealTimeNotificationChecker from "@/components/notification/real-time-not
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Hyre - Roblox Group Management",
+  title: "Staffify - Roblox Group Management",
   description: "The ultimate staff management platform for Roblox groups",
     generator: 'v0.dev'
 }

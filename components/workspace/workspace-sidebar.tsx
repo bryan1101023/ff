@@ -24,8 +24,9 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useRouter } from "next/navigation"
 import { signOut } from "@/lib/auth-utils"
 import NotificationBell from "@/components/ui/notification-bell"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import FlagReportModal from "./flag-report-modal"
+import { Menu, X } from "lucide-react"
 
 interface WorkspaceSidebarProps {
   workspace: any
@@ -37,6 +38,26 @@ export default function WorkspaceSidebar({ workspace, userData }: WorkspaceSideb
   const router = useRouter()
   const workspaceId = pathname.split("/")[2]
   const [isFlagModalOpen, setIsFlagModalOpen] = useState(false)
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
+  
+  // Check if we're on mobile
+  useEffect(() => {
+    const checkIfMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    // Initial check
+    checkIfMobile();
+    
+    // Add event listener for window resize
+    window.addEventListener('resize', checkIfMobile);
+    
+    // Cleanup
+    return () => {
+      window.removeEventListener('resize', checkIfMobile);
+    };
+  }, [])
 
   const handleSignOut = async () => {
     try {
@@ -127,10 +148,28 @@ export default function WorkspaceSidebar({ workspace, userData }: WorkspaceSideb
   ]
 
   return (
-    <div className="h-screen w-64 flex flex-col bg-card border-r border-border">
+    <>
+      {/* Mobile Menu Button - Only visible on mobile */}
+      {isMobile && (
+        <div className="fixed top-4 left-4 z-50">
+          <Button 
+            variant="outline" 
+            size="icon" 
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            className="md:hidden bg-card shadow-md"
+          >
+            {isMobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </Button>
+        </div>
+      )}
+      
+      {/* Sidebar - Full width on mobile when open, normal width on desktop */}
+      <div 
+        className={`${isMobile ? 'fixed inset-0 z-40' : 'h-screen w-64'} ${isMobile && !isMobileMenuOpen ? '-translate-x-full' : 'translate-x-0'} transition-transform duration-300 ease-in-out flex flex-col bg-card border-r border-border`}
+      >
       {/* Header */}
       <div className="p-4 border-b border-border">
-        <div className="flex items-center gap-2 mb-2">
+        <div className="flex items-center justify-between gap-2 mb-2">
           <div className="relative">
             <Avatar className="h-10 w-10">
               <AvatarImage src={workspace?.icon || workspace?.groupIcon || "/placeholder.svg?height=40&width=40"} alt={workspace?.groupName || "Workspace"} />
@@ -149,6 +188,18 @@ export default function WorkspaceSidebar({ workspace, userData }: WorkspaceSideb
             </div>
             <p className="text-xs text-muted-foreground truncate">Group Workspace</p>
           </div>
+          
+          {/* Close button - only visible on mobile */}
+          {isMobile && (
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="md:hidden"
+            >
+              <X className="h-5 w-5" />
+            </Button>
+          )}
         </div>
         <div className="flex items-center justify-between mt-2">
           <Button variant="outline" size="sm" className="w-full" onClick={handleBackToDashboard}>
@@ -168,6 +219,7 @@ export default function WorkspaceSidebar({ workspace, userData }: WorkspaceSideb
               className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                 item.isActive ? "bg-primary/10 text-primary" : "text-foreground hover:bg-muted"
               }`}
+              onClick={() => isMobile && setIsMobileMenuOpen(false)}
             >
               <item.icon className={`h-5 w-5 ${item.isActive ? "text-primary" : "text-muted-foreground"}`} />
               {item.label}
@@ -223,6 +275,15 @@ export default function WorkspaceSidebar({ workspace, userData }: WorkspaceSideb
         workspace={workspace}
         userData={userData}
       />
+      
+      {/* Mobile overlay backdrop */}
+      {isMobile && isMobileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-30"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
     </div>
+    </>
   )
 }

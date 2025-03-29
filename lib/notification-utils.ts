@@ -1,5 +1,6 @@
 import { db } from "./firebase"
 import { collection, addDoc, serverTimestamp, getDocs } from "firebase/firestore"
+import { toast as showToastOriginal } from "@/hooks/use-toast"
 
 // Function to create a new notification
 export async function createNotification(
@@ -43,7 +44,7 @@ export async function createNotification(
 export async function createWorkspaceDeletedNotification(userId: string, workspaceName: string): Promise<void> {
   try {
     // Create a notification in the main notifications collection
-    const message = `Your workspace "${workspaceName}" has been deleted for violating Hyre rules.`
+    const message = `Your workspace "${workspaceName}" has been deleted for violating Staffify rules.`
     await createNotification(userId, message, "workspace", "/dashboard", "Return to Dashboard")
 
     // Send real-time notification
@@ -241,4 +242,19 @@ export async function sendRealTimeNotification(
     console.error("Error sending real-time notification:", error)
     return false
   }
+}
+
+/**
+ * Shows a black toast notification at the bottom right of the screen
+ * @param title The title of the notification
+ * @param description The description text
+ * @param duration How long to show the notification (in ms)
+ */
+export function showToast(title: string, description?: string, duration: number = 5000) {
+  return showToastOriginal({
+    title,
+    description,
+    duration,
+    variant: "black", // Use our new black variant
+  });
 }

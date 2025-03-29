@@ -10,7 +10,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Calendar, AlertCircle, CheckCircle, Loader2 } from "lucide-react"
 import { DatePicker } from "@/components/ui/date-picker"
-import { collection, addDoc, query, where, getDocs, serverTimestamp, doc, getDoc } from "firebase/firestore"
+import { collection, addDoc, query, where, getDocs, serverTimestamp, doc, getDoc, onSnapshot } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { getAuth } from "firebase/auth"
 import { useToast } from "@/components/ui/use-toast"
@@ -26,15 +26,60 @@ export default function InactivityPage({ params }: { params: { id: string } }) {
   const [activeNotices, setActiveNotices] = useState<any[]>([])
   const [pastNotices, setPastNotices] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [isRestricted, setIsRestricted] = useState(false)
   const { toast } = useToast()
   const { id: workspaceId } = params
   const router = useRouter()
 
+  // Check for workspace restrictions
   useEffect(() => {
-    fetchInactivityNotices()
-  }, [workspaceId])
+    // Set up real-time listener for workspace restrictions
+    const unsubscribeRestrictions = onSnapshot(
+      doc(db, "workspaces", workspaceId, "restrictions", "current"),
+      (docSnapshot) => {
+        if (docSnapshot.exists() && docSnapshot.data()?.isActive) {
+          const restrictions = docSnapshot.data();
+          
+          // Check if inactivity notices are restricted
+          if (restrictions.features && restrictions.features.includes("inactivityNotice")) {
+            setIsRestricted(true);
+            // Redirect to workspace home
+            router.push(`/workspace/${workspaceId}`);
+          } else {
+            setIsRestricted(false);
+          }
+        } else {
+          // No restrictions
+          setIsRestricted(false);
+        }
+      },
+      (error) => {
+        console.error("Error checking workspace restrictions:", error);
+      }
+    );
+
+    // Clean up listener on unmount
+    return () => {
+      if (typeof unsubscribeRestrictions === 'function') {
+        unsubscribeRestrictions();
+      }
+    };
+  }, [workspaceId, router]);
+
+  // Fetch inactivity notices when component mounts
+  useEffect(() => {
+    // Only fetch if not restricted
+    if (!isRestricted) {
+      fetchInactivityNotices();
+    }
+  }, [workspaceId, isRestricted])
 
   const fetchInactivityNotices = async () => {
+    // Don't fetch if restricted
+    if (isRestricted) {
+      return;
+    }
+    
     setIsLoading(true)
     try {
       const auth = getAuth()
@@ -199,37 +244,37 @@ export default function InactivityPage({ params }: { params: { id: string } }) {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "approved":
-        return <span className="text-xs bg-green-500/20 text-green-500 px-2 py-1 rounded-full">Approved</span>
+        return <span className="text-[10px] sm:text-xs bg-green-500/20 text-green-500 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full whitespace-nowrap">Approved</span>
       case "denied":
-        return <span className="text-xs bg-red-500/20 text-red-500 px-2 py-1 rounded-full">Denied</span>
+        return <span className="text-[10px] sm:text-xs bg-red-500/20 text-red-500 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full whitespace-nowrap">Denied</span>
       case "completed":
-        return <span className="text-xs bg-blue-500/20 text-blue-500 px-2 py-1 rounded-full">Completed</span>
+        return <span className="text-[10px] sm:text-xs bg-blue-500/20 text-blue-500 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full whitespace-nowrap">Completed</span>
       case "pending":
       default:
-        return <span className="text-xs bg-amber-500/20 text-amber-500 px-2 py-1 rounded-full">Pending Approval</span>
+        return <span className="text-[10px] sm:text-xs bg-amber-500/20 text-amber-500 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full whitespace-nowrap">Pending</span>
     }
   }
 
   return (
-    <div className="p-6 md:p-8">
-      <div className="mb-8">
-        <div className="flex items-center justify-between">
+    <div className="p-4 sm:p-6 md:p-8">
+      <div className="mb-6 sm:mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-white">Inactivity Notices</h1>
-            <p className="text-white/60">Submit and manage your inactivity notices</p>
+            <h1 className="text-2xl sm:text-3xl font-bold text-white">Inactivity Notices</h1>
+            <p className="text-sm sm:text-base text-white/60">Submit and manage your inactivity notices</p>
           </div>
-          <Button onClick={() => router.push(`/workspace/${workspaceId}/inactivity/manage`)} variant="outline">
+          <Button onClick={() => router.push(`/workspace/${workspaceId}/inactivity/manage`)} variant="outline" className="w-full sm:w-auto">
             <CheckCircle className="h-4 w-4 mr-2" />
             Manage Notices
           </Button>
         </div>
       </div>
 
-      <Tabs defaultValue="submit" className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="submit">Submit Notice</TabsTrigger>
-          <TabsTrigger value="active">Active Notices ({activeNotices.length})</TabsTrigger>
-          <TabsTrigger value="history">History ({pastNotices.length})</TabsTrigger>
+      <Tabs defaultValue="submit" className="space-y-4 sm:space-y-6">
+        <TabsList className="w-full">
+          <TabsTrigger value="submit" className="text-xs sm:text-sm">Submit Notice</TabsTrigger>
+          <TabsTrigger value="active" className="text-xs sm:text-sm">Active ({activeNotices.length})</TabsTrigger>
+          <TabsTrigger value="history" className="text-xs sm:text-sm">History ({pastNotices.length})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="submit">
@@ -247,13 +292,13 @@ export default function InactivityPage({ params }: { params: { id: string } }) {
               )}
 
               {success ? (
-                <div className="text-center py-6">
-                  <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-4">
-                    <CheckCircle className="h-8 w-8 text-green-500" />
+                <div className="text-center py-4 sm:py-6">
+                  <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-3 sm:mb-4">
+                    <CheckCircle className="h-6 w-6 sm:h-8 sm:w-8 text-green-500" />
                   </div>
-                  <h3 className="text-xl font-bold mb-2">Notice Submitted!</h3>
-                  <p className="text-muted-foreground mb-6">Your inactivity notice has been submitted for approval.</p>
-                  <Button onClick={resetForm}>Submit Another</Button>
+                  <h3 className="text-lg sm:text-xl font-bold mb-2">Notice Submitted!</h3>
+                  <p className="text-sm sm:text-base text-muted-foreground mb-4 sm:mb-6">Your inactivity notice has been submitted for approval.</p>
+                  <Button onClick={resetForm} className="w-full sm:w-auto">Submit Another</Button>
                 </div>
               ) : (
                 <form onSubmit={handleSubmit} className="space-y-4">

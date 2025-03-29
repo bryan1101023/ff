@@ -634,14 +634,14 @@ export default function DashboardPage() {
           <div className="flex justify-between items-center mb-8">
             <div>
               <h1 className="text-3xl font-bold text-white">
-                {isCreatingWorkspace ? "Create Workspace" : "Hyre Dashboard"}
+                {isCreatingWorkspace ? "Create Workspace" : "Staffify Dashboard"}
               </h1>
               <p className="text-white/60">
                 {isCreatingWorkspace
                   ? "Select a group for your new workspace"
                   : userData?.username
                     ? `Welcome, ${userData.username}`
-                    : "Welcome to Hyre"}
+                    : "Welcome to Staffify"}
               </p>
             </div>
 
@@ -883,7 +883,7 @@ export default function DashboardPage() {
   return (
     <>
       <Notification
-        message="This workspace has been deleted for violating Hyre rules."
+        message="This workspace has been deleted for violating Staffify rules."
         type="white"
         duration={10000}
         isVisible={showDeletedNotification}
@@ -897,14 +897,14 @@ export default function DashboardPage() {
           <div className="flex justify-between items-center mb-8">
             <div>
               <h1 className="text-3xl font-bold text-white">
-                {activeWorkspace ? activeWorkspace.groupName : "Hyre Dashboard"}
+                {activeWorkspace ? activeWorkspace.groupName : "Staffify Dashboard"}
               </h1>
               <p className="text-white/60">
                 {activeWorkspace
                   ? "Manage your group workspace"
                   : userData?.username
                     ? `Welcome, ${userData.username}`
-                    : "Welcome to Hyre"}
+                    : "Welcome to Staffify"}
               </p>
             </div>
 

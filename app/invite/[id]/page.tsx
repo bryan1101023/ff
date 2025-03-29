@@ -4,8 +4,9 @@ import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { auth, db } from "@/lib/firebase"
 import { onAuthStateChanged } from "firebase/auth"
-import { doc, getDoc, arrayUnion, setDoc } from "firebase/firestore"
+import { doc, getDoc, arrayUnion, setDoc, collection, query, where, getDocs } from "firebase/firestore"
 import { getCurrentUserData } from "@/lib/auth-utils"
+import { getWorkspaceFromInviteCode } from "@/lib/invite-utils"
 import BioVerification from "@/components/auth/bio-verification"
 import { Button } from "@/components/ui/button"
 import { Loader2, CheckCircle, ArrowRight } from "lucide-react"
@@ -28,25 +29,55 @@ export default function InvitePage({ params }: { params: { id: string } }) {
   useEffect(() => {
     const fetchWorkspaceDetails = async () => {
       try {
+        // First check if the ID is an invite code or a workspace ID
+        let actualWorkspaceId = workspaceId;
+        
+        // Check if this is an invite code by looking for it in the invites collection
+        const invitesQuery = query(
+          collection(db, "invites"),
+          where("code", "==", workspaceId),
+          where("isActive", "==", true)
+        );
+        
+        const inviteSnapshot = await getDocs(invitesQuery);
+        
+        if (!inviteSnapshot.empty) {
+          // This is an invite code, get the workspace ID from it
+          const invite = inviteSnapshot.docs[0].data();
+          
+          // Check if invite has expired
+          if (invite.expiresAt && invite.expiresAt < Date.now()) {
+            setError("This invite has expired.");
+            return;
+          }
+          
+          console.log("Found invite code, resolving to workspace ID:", invite.workspaceId);
+          actualWorkspaceId = invite.workspaceId;
+        }
+        
+        console.log("Fetching workspace with ID:", actualWorkspaceId);
         // Get workspace details
-        const workspaceDoc = await getDoc(doc(db, "workspaces", workspaceId))
+        const workspaceDoc = await getDoc(doc(db, "workspaces", actualWorkspaceId));
+        
         if (workspaceDoc.exists()) {
-          const workspaceData = workspaceDoc.data()
-          setWorkspace(workspaceData)
+          const workspaceData = workspaceDoc.data();
+          console.log("Workspace data found:", workspaceData.name || "Unnamed workspace");
+          setWorkspace(workspaceData);
 
           // Get workspace owner details
           if (workspaceData.ownerId) {
-            const ownerDoc = await getDoc(doc(db, "users", workspaceData.ownerId))
+            const ownerDoc = await getDoc(doc(db, "users", workspaceData.ownerId));
             if (ownerDoc.exists()) {
-              setWorkspaceOwner(ownerDoc.data())
+              setWorkspaceOwner(ownerDoc.data());
             }
           }
         } else {
-          setError("Workspace not found or has been deleted.")
+          console.error("Workspace document does not exist for ID:", actualWorkspaceId);
+          setError("Workspace not found or has been deleted.");
         }
       } catch (error) {
-        console.error("Error fetching workspace:", error)
-        setError("Failed to load workspace details.")
+        console.error("Error fetching workspace:", error);
+        setError("Failed to load workspace details.");
       }
     }
 
@@ -98,7 +129,7 @@ export default function InvitePage({ params }: { params: { id: string } }) {
       )
 
       setNeedsVerification(false)
-      setUserData((prev) => ({
+      setUserData((prev: any) => ({
         ...prev,
         robloxUsername: username,
         robloxUserId: userId,
@@ -114,38 +145,68 @@ export default function InvitePage({ params }: { params: { id: string } }) {
     setError(null)
 
     try {
-      // Check if user has the required rank
-      let hasRequiredRank = false
-
-      if (workspace.allowedRanks && workspace.allowedRanks.length > 0 && userData.robloxUserId) {
-        try {
-          // Fetch user's groups
-          const response = await fetch(`/api/roblox/groups?userId=${userData.robloxUserId}`)
-          if (response.ok) {
-            const groups = await response.json()
-
-            // Find if user is in this group
-            const matchingGroup = groups.find((g: any) => g.id === workspace.groupId)
-            if (matchingGroup) {
-              // Check if user's rank is in the allowed ranks
-              const userRoleId = matchingGroup.role.id
-              hasRequiredRank = workspace.allowedRanks.includes(userRoleId)
-            }
-          }
-        } catch (error) {
-          console.error("Error checking user ranks:", error)
-        }
-      }
-
-      if (!hasRequiredRank && user.uid !== workspace.ownerId) {
-        setError("You don't have the required rank to join this workspace.")
+      // Always check group membership first, regardless of invite method
+      if (!userData.robloxVerified || !userData.robloxUserId) {
+        setError("You must verify your Roblox account before joining a workspace.")
         setIsJoining(false)
         return
       }
 
+      // Check if user has the required rank and is in the group
+      let hasRequiredRank = false
+      let isInGroup = false
+      
+      // Skip group check only for workspace owner
+      const isWorkspaceOwner = user.uid === workspace.ownerId
+      
+      if (!isWorkspaceOwner) {
+        try {
+          // Fetch user's groups
+          const response = await fetch(`/api/roblox/groups?userId=${userData.robloxUserId}`)
+          if (!response.ok) {
+            throw new Error(`Failed to fetch groups: ${response.status}`)
+          }
+          
+          const groups = await response.json()
+          console.log("User groups:", groups)
+          console.log("Workspace group ID:", workspace.groupId)
+          
+          // Find if user is in this group
+          const matchingGroup = groups.find((g: any) => g.id === workspace.groupId)
+          
+          if (!matchingGroup) {
+            setError("You must be a member of the group to join this workspace.")
+            setIsJoining(false)
+            return
+          }
+          
+          isInGroup = true
+          
+          // Check if user's rank is in the allowed ranks (if specified)
+          if (workspace.allowedRanks && workspace.allowedRanks.length > 0) {
+            const userRoleId = matchingGroup.role.id
+            hasRequiredRank = workspace.allowedRanks.includes(userRoleId)
+            
+            if (!hasRequiredRank) {
+              setError("You don't have the required rank to join this workspace.")
+              setIsJoining(false)
+              return
+            }
+          }
+        } catch (error) {
+          console.error("Error checking user groups:", error)
+          setError("Failed to verify group membership. Please try again.")
+          setIsJoining(false)
+          return
+        }
+      }
+
+      // Get the actual workspace ID (in case we're using an invite code)
+      const actualWorkspaceId = workspace.id || workspaceId;
+      
       // Add user to workspace members
       await setDoc(
-        doc(db, "workspaces", workspaceId),
+        doc(db, "workspaces", actualWorkspaceId),
         {
           members: arrayUnion(user.uid),
           updatedAt: Date.now(),
@@ -157,8 +218,8 @@ export default function InvitePage({ params }: { params: { id: string } }) {
       await setDoc(
         doc(db, "users", user.uid),
         {
-          workspaces: arrayUnion(workspaceId),
-          activeWorkspace: workspaceId,
+          workspaces: arrayUnion(actualWorkspaceId),
+          activeWorkspace: actualWorkspaceId,
         },
         { merge: true },
       )
@@ -167,7 +228,7 @@ export default function InvitePage({ params }: { params: { id: string } }) {
 
       // Redirect to workspace after a short delay
       setTimeout(() => {
-        router.push(`/workspace/${workspaceId}`)
+        router.push(`/workspace/${workspace.id || workspaceId}`)
       }, 1500)
     } catch (error) {
       console.error("Error joining workspace:", error)

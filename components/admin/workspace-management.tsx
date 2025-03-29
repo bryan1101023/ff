@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { collection, getDocs, doc, getDoc, setDoc, query, where, serverTimestamp, deleteDoc } from "firebase/firestore"
+import { collection, getDocs, doc, getDoc, setDoc, query, where, serverTimestamp, deleteDoc, onSnapshot } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { Loader2, Search, BadgeCheck, CheckCircle, XCircle, AlertTriangle, Trash2, ShieldOff } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -19,6 +19,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { toast } from "@/components/ui/use-toast"
+import { showToast } from "@/lib/notification-utils"
 import { Textarea } from "@/components/ui/textarea"
 import RestrictionModal from "./restriction-modal"
 import { createNotification } from "@/lib/notification"
@@ -27,6 +28,44 @@ import {
   createWorkspaceDeletedNotification,
   createWorkspaceRestrictedNotification,
 } from "@/lib/notification-utils"
+
+// Helper function to parse duration strings like "7 days" into milliseconds
+function parseDuration(durationStr: string): number {
+  // Extract the numeric value and unit using regex
+  const regex = /(\d+)\s*(day|days|week|weeks|month|months)/i;
+  const match = durationStr.match(regex);
+  
+  if (!match) {
+    // Try a simple numeric extraction if the format doesn't match the expected pattern
+    const numericValue = parseInt(durationStr, 10);
+    if (!isNaN(numericValue)) {
+      console.log("Using numeric value only:", numericValue);
+      return numericValue * 24 * 60 * 60 * 1000; // Default to days
+    }
+    
+    // Default to 7 days if format is not recognized
+    console.warn(`Unrecognized duration format: ${durationStr}, defaulting to 7 days`);
+    return 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
+  }
+  
+  const value = parseInt(match[1], 10);
+  const unit = match[2].toLowerCase();
+  
+  console.log("Parsed duration:", { value, unit });
+  
+  // Convert to milliseconds
+  if (unit.includes('day')) {
+    return value * 24 * 60 * 60 * 1000;
+  } else if (unit.includes('week')) {
+    return value * 7 * 24 * 60 * 60 * 1000;
+  } else if (unit.includes('month')) {
+    // Approximate a month as 30 days
+    return value * 30 * 24 * 60 * 60 * 1000;
+  }
+  
+  // Default fallback
+  return value * 24 * 60 * 60 * 1000; // Default to days
+}
 
 interface WorkspaceManagementProps {
   workspaces: any[];
@@ -47,6 +86,39 @@ export default function WorkspaceManagement({ workspaces, onRefresh }: Workspace
   const [workspaceToRestrict, setWorkspaceToRestrict] = useState<any>(null)
   const [isUnrestricting, setIsUnrestricting] = useState(false)
   const [workspaceRestrictions, setWorkspaceRestrictions] = useState<{ [key: string]: boolean }>({})
+
+  // Set up real-time listeners for workspace restrictions
+  useEffect(() => {
+    // Create listeners for each workspace's restrictions
+    const unsubscribers = workspaces.map(workspace => {
+      return onSnapshot(
+        doc(db, "workspaces", workspace.id, "restrictions", "current"),
+        (docSnapshot) => {
+          if (docSnapshot.exists()) {
+            // Update the restrictions state for this workspace
+            setWorkspaceRestrictions(prev => ({
+              ...prev,
+              [workspace.id]: docSnapshot.data().isActive === true
+            }));
+          } else {
+            // No restrictions document means no active restrictions
+            setWorkspaceRestrictions(prev => ({
+              ...prev,
+              [workspace.id]: false
+            }));
+          }
+        },
+        (error) => {
+          console.error(`Error listening to restrictions for workspace ${workspace.id}:`, error);
+        }
+      );
+    });
+
+    // Cleanup function to unsubscribe from all listeners
+    return () => {
+      unsubscribers.forEach(unsubscribe => unsubscribe());
+    };
+  }, [workspaces]);
 
   useEffect(() => {
     // Use the workspaces prop directly instead of fetching them again
@@ -264,12 +336,14 @@ export default function WorkspaceManagement({ workspaces, onRefresh }: Workspace
     }
   }
 
+
+
   const handleApplyRestrictions = async (features: string[], reason: string, duration?: string) => {
     if (!workspaceToRestrict) return
 
     try {
       // Create a restrictions document in the workspace
-      const restrictionData = {
+      const restrictionData: any = {
         features,
         reason,
         appliedAt: serverTimestamp(),
@@ -279,8 +353,19 @@ export default function WorkspaceManagement({ workspaces, onRefresh }: Workspace
 
       // Add duration if provided
       if (duration) {
-        (restrictionData as any).duration = duration
-        (restrictionData as any).expiresAt = new Date(Date.now() + parseDuration(duration.toString()))
+        try {
+          console.log("Processing duration:", duration);
+          const durationMs = parseDuration(duration.toString());
+          console.log("Calculated duration in ms:", durationMs);
+          
+          restrictionData.duration = duration;
+          restrictionData.expiresAt = new Date(Date.now() + durationMs);
+          console.log("Set expiration date to:", restrictionData.expiresAt);
+        } catch (durationError) {
+          console.error("Error processing duration:", durationError);
+          // Continue with the restriction without the duration
+          restrictionData.duration = "indefinite";
+        }
       }
 
       await setDoc(doc(db, "workspaces", workspaceToRestrict.id, "restrictions", "current"), restrictionData, {
@@ -299,26 +384,24 @@ export default function WorkspaceManagement({ workspaces, onRefresh }: Workspace
         )
       }
 
-      // Update local state
-      setWorkspaceRestrictions((prev) => ({
-        ...prev,
-        [workspaceToRestrict.id]: true,
-      }))
+      // The real-time listener will update the state automatically
 
-      toast({
-        title: "Restrictions applied",
-        description: `Restrictions have been applied to workspace "${workspaceToRestrict.groupName}".`,
-      })
+      // Use the original toast to maintain compatibility
+      // Use our black toast for notifications
+      showToast(
+        "Restrictions applied",
+        `Restrictions have been applied to workspace "${workspaceToRestrict.groupName}".`
+      )
 
       setWorkspaceToRestrict(null)
       setIsRestrictionModalOpen(false)
     } catch (error) {
       console.error("Error applying restrictions:", error)
-      toast({
-        title: "Error",
-        description: "Failed to apply restrictions. Please try again.",
-        variant: "destructive",
-      })
+      // Use our black toast for error notifications
+      showToast(
+        "Error",
+        "Failed to apply restrictions. Please try again."
+      )
     }
   }
 
@@ -330,11 +413,7 @@ export default function WorkspaceManagement({ workspaces, onRefresh }: Workspace
       // Delete the restrictions document
       await deleteDoc(doc(db, "workspaces", workspaceId, "restrictions", "current"))
 
-      // Update local state
-      setWorkspaceRestrictions((prev) => ({
-        ...prev,
-        [workspaceId]: false,
-      }))
+      // The real-time listener will update the state automatically
 
       // Send notification to workspace owner
       if (ownerId) {
@@ -358,34 +437,24 @@ export default function WorkspaceManagement({ workspaces, onRefresh }: Workspace
         })
       }
 
-      toast({
-        title: "Restrictions removed",
-        description: `All restrictions have been removed from workspace "${workspaceName}".`
-      })
+      // Use our black toast for notifications
+      showToast(
+        "Restrictions removed",
+        `All restrictions have been removed from workspace "${workspaceName}".`
+      )
     } catch (error) {
       console.error("Error removing restrictions:", error)
-      toast({
-        title: "Error",
-        description: "Failed to remove restrictions. Please try again.",
-        variant: "destructive",
-      })
+      // Use our black toast for error notifications
+      showToast(
+        "Error",
+        "Failed to remove restrictions. Please try again."
+      )
     } finally {
       setIsUnrestricting(false)
     }
   }
 
-  const parseDuration = (durationStr: string): number => {
-    const durationLower = durationStr.toLowerCase()
-    const value = parseInt(durationStr, 10)
-
-    if (isNaN(value)) return 0
-
-    if (durationLower.includes("day")) return value * 24 * 60 * 60 * 1000
-    if (durationLower.includes("week")) return value * 7 * 24 * 60 * 60 * 1000
-    if (durationLower.includes("month")) return value * 30 * 24 * 60 * 60 * 1000
-
-    return value * 24 * 60 * 60 * 1000 // Default to days
-  }
+  // parseDuration is now defined at the top level of the file
 
   return (
     <Card>

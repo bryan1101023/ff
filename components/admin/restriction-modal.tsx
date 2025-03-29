@@ -54,14 +54,19 @@ export default function RestrictionModal({ isOpen, onClose, onConfirm, workspace
 
     setIsSubmitting(true)
 
-    // Call the onConfirm callback with the selected features, reason, and duration
-    onConfirm(selectedFeatures, reason, duration || undefined)
-
-    // Reset the form
-    setSelectedFeatures([])
-    setReason("")
-    setDuration("")
-    setIsSubmitting(false)
+    try {
+      // Call the onConfirm callback with the selected features, reason, and duration
+      // Only pass duration if it's not empty
+      onConfirm(selectedFeatures, reason, duration ? duration : undefined)
+    } catch (error) {
+      console.error("Error applying restrictions:", error);
+    } finally {
+      // Reset the form
+      setSelectedFeatures([])
+      setReason("")
+      setDuration("")
+      setIsSubmitting(false)
+    }
   }
 
   return (

@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react"
 import { useParams } from "next/navigation"
-import { useAuth } from "@/hooks/use-auth"
+import { onAuthStateChanged } from "firebase/auth"
+import { auth } from "@/lib/firebase"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -13,7 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { toast } from "@/components/ui/use-toast"
-import { Loader2, ArrowUp, Check, X, AlertTriangle, UserPlus, ChevronUp, ChevronDown, RefreshCw } from "lucide-react"
+import { Loader2, ArrowUp, Check, X, AlertTriangle, UserPlus, ChevronUp, ChevronDown, RefreshCw, Info } from "lucide-react"
 import { doc, getDoc } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { 
@@ -26,11 +27,17 @@ import {
   getGroupRanks,
   getUserRankInGroup
 } from "@/lib/recommendation-utils"
+import { getCurrentUserData } from "@/lib/auth-utils"
 import { formatDistanceToNow } from "date-fns"
 
 export default function RecommendationsPage() {
-  const { id: workspaceId } = useParams<{ id: string }>()
-  const { user, loading: authLoading } = useAuth()
+  // Get workspaceId from params and ensure it's a string
+  const params = useParams<{ id: string }>()
+  const workspaceId = params?.id || ""
+  
+  const [user, setUser] = useState<any>(null)
+  const [userData, setUserData] = useState<any>(null)
+  const [authLoading, setAuthLoading] = useState(true)
   const isAuthenticated = !!user
   
   const [isLoading, setIsLoading] = useState(true)
@@ -67,14 +74,77 @@ export default function RecommendationsPage() {
   // Refresh state
   const [isRefreshing, setIsRefreshing] = useState(false)
 
+  // Handle authentication directly
   useEffect(() => {
-    if (!authLoading && isAuthenticated && workspaceId) {
-      fetchWorkspaceData()
+    console.log("Setting up auth listener")
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      console.log("Auth state changed:", currentUser ? "User authenticated" : "No user")
+      setUser(currentUser)
+      
+      // Fetch full user data from Firestore if authenticated
+      if (currentUser) {
+        try {
+          const fullUserData = await getCurrentUserData(currentUser.uid)
+          console.log("Fetched full user data:", fullUserData)
+          setUserData(fullUserData)
+        } catch (error) {
+          console.error("Error fetching user data:", error)
+        }
+      }
+      
+      setAuthLoading(false)
+    })
+    
+    return () => unsubscribe()
+  }, [])
+  
+  // Handle data loading after authentication is determined
+  useEffect(() => {
+    console.log("Auth state:", { authLoading, isAuthenticated, workspaceId })
+    
+    if (!authLoading) {
+      if (isAuthenticated && workspaceId) {
+        console.log("Fetching data for authenticated user")
+        // Load data sequentially to avoid race conditions
+        fetchWorkspaceData()
+          .then(() => fetchRecommendations())
+          .catch(error => {
+            console.error("Error in data loading:", error)
+            setIsLoading(false)
+          })
+      } else {
+        // If not authenticated or no workspaceId, still set loading to false
+        console.log("Not authenticated or no workspaceId, ending loading state")
+        setIsLoading(false)
+      }
+    }
+    
+    // Add a safety timeout to ensure loading state is eventually reset
+    const safetyTimer = setTimeout(() => {
+      if (isLoading) {
+        console.log("Safety timeout triggered - forcing loading state to false")
+        setIsLoading(false)
+      }
+    }, 5000) // 5 second safety timeout
+    
+    return () => clearTimeout(safetyTimer)
+  }, [authLoading, isAuthenticated, workspaceId])
+  
+  // Separate effect for tab/sort changes to avoid refetching workspace data
+  useEffect(() => {
+    if (isAuthenticated && workspaceId) {
       fetchRecommendations()
     }
-  }, [authLoading, isAuthenticated, workspaceId, activeTab, sortBy, sortOrder])
+  }, [activeTab, sortBy, sortOrder])
 
   const fetchWorkspaceData = async () => {
+    console.log("Starting fetchWorkspaceData for workspaceId:", workspaceId)
+    if (!workspaceId) {
+      console.error("No workspaceId provided")
+      setIsLoading(false)
+      return
+    }
+    
     try {
       const workspaceDoc = await getDoc(doc(db, "workspaces", workspaceId))
       if (workspaceDoc.exists()) {
@@ -92,6 +162,8 @@ export default function RecommendationsPage() {
             setGroupRanks(ranks)
           }
         }
+      } else {
+        console.log("Workspace document does not exist")
       }
     } catch (error) {
       console.error("Error fetching workspace:", error)
@@ -101,11 +173,19 @@ export default function RecommendationsPage() {
         variant: "destructive",
       })
     } finally {
+      console.log("Finished fetchWorkspaceData")
       setIsLoading(false)
     }
   }
 
   const fetchRecommendations = async () => {
+    console.log("Starting fetchRecommendations for workspaceId:", workspaceId)
+    if (!workspaceId) {
+      console.error("No workspaceId provided")
+      setIsRefreshing(false)
+      return
+    }
+    
     setIsRefreshing(true)
     try {
       const status = activeTab === "all" ? "all" : activeTab === "pending" ? "pending" : activeTab === "approved" ? "approved" : "rejected"
@@ -119,36 +199,52 @@ export default function RecommendationsPage() {
         variant: "destructive",
       })
     } finally {
+      console.log("Finished fetchRecommendations")
       setIsRefreshing(false)
     }
   }
 
   const handleSearchUser = async () => {
-    if (!targetUsername.trim()) return
+    if (!targetUsername.trim()) {
+      toast({
+        title: "Error",
+        description: "Please enter a Roblox username",
+        variant: "destructive",
+      })
+      return
+    }
     
     setIsSearchingUser(true)
     setFoundUser(null)
+    console.log(`Searching for user: ${targetUsername}`)
     
     try {
       const user = await fetchRobloxUserByUsername(targetUsername)
+      console.log("Found user:", user)
       setFoundUser(user)
       
       // Get user's current rank in the group
       if (workspace?.groupId || workspace?.robloxGroupId) {
         const groupId = workspace.groupId || workspace.robloxGroupId
         if (groupId) {
+          console.log(`Getting rank for user ${user.id} in group ${groupId}`)
           const rankInfo = await getUserRankInGroup(user.id, groupId)
+          console.log("User rank info:", rankInfo)
           setUserCurrentRank(rankInfo)
+        } else {
+          console.warn("No valid groupId found in workspace")
         }
-        // Rank info is set inside the if block above
+      } else {
+        console.warn("No groupId or robloxGroupId in workspace data")
       }
     } catch (error) {
       console.error("Error searching for user:", error)
       toast({
         title: "User Not Found",
-        description: "Could not find a Roblox user with that username",
+        description: error instanceof Error ? error.message : "Could not find a Roblox user with that username",
         variant: "destructive",
       })
+      setFoundUser(null)
     } finally {
       setIsSearchingUser(false)
     }
@@ -167,16 +263,45 @@ export default function RecommendationsPage() {
     setIsSubmitting(true)
     
     try {
+      // Get the recommender's information from the full user data
+      let recommenderUsername = "";
+      let recommenderAvatar = "";
+      
+      // Use the full user data from Firestore
+      if (userData) {
+        // Prefer Roblox username if verified
+        recommenderUsername = userData.robloxUsername || userData.username || user.displayName || "";
+        
+        // Use Roblox avatar if available
+        if (userData.robloxUserId) {
+          recommenderAvatar = `https://www.roblox.com/headshot-thumbnail/image?userId=${userData.robloxUserId}&width=150&height=150&format=png`;
+        } else {
+          recommenderAvatar = user.photoURL || "";
+        }
+        
+        console.log("Using recommender info:", { recommenderUsername, recommenderAvatar });
+      } else {
+        console.warn("No user data available, using fallback information");
+        recommenderUsername = user.displayName || "";
+        recommenderAvatar = user.photoURL || "";
+      }
+      
+      // Find the current rank name and recommended rank name
+      const currentRankObj = groupRanks.find(r => r.rank === (userCurrentRank?.rank || 0));
+      const recommendedRankObj = groupRanks.find(r => r.rank === parseInt(recommendedRank));
+      
       await createRecommendation(
         workspaceId,
         user.uid,
-        user.username || user.displayName || "Unknown User",
-        user.photoURL || "",
+        recommenderUsername,
+        recommenderAvatar,
         foundUser.name,
         foundUser.id,
         foundUser.avatar,
         userCurrentRank?.rank || 0,
+        currentRankObj?.name || `Rank ${userCurrentRank?.rank || 0}`,
         parseInt(recommendedRank),
+        recommendedRankObj?.name || `Rank ${recommendedRank}`,
         justification
       )
       
@@ -276,9 +401,13 @@ export default function RecommendationsPage() {
   }
 
   if (authLoading || isLoading) {
+    console.log("Rendering loading state", { authLoading, isLoading })
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="flex flex-col items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+        <p className="text-sm text-muted-foreground">
+          {authLoading ? "Checking authentication..." : "Loading workspace data..."}
+        </p>
       </div>
     )
   }
@@ -328,6 +457,31 @@ export default function RecommendationsPage() {
           >
             <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
           </Button>
+          
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="icon" className="rounded-full">
+                <Info className="h-4 w-4" />
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Recommendation Approval Process</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <p>Recommendations are automatically processed based on support:</p>
+                <ul className="list-disc pl-5 space-y-2">
+                  <li><strong>Approval:</strong> A recommendation needs at least 6 supporters to be automatically approved.</li>
+                  <li><strong>Denial:</strong> If a recommendation doesn't reach the required support threshold, it will be denied.</li>
+                  <li><strong>Support:</strong> Click the "Support" button on a recommendation to add your support.</li>
+                </ul>
+                <div className="flex items-center gap-2 bg-muted p-3 rounded">
+                  <AlertTriangle className="h-5 w-5 text-amber-500" />
+                  <p className="text-sm">Only verified workspace members can support recommendations.</p>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
           
           <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
             <DialogTrigger asChild>
@@ -521,7 +675,9 @@ export default function RecommendationsPage() {
                     <div>
                       <CardTitle className="text-lg">{recommendation.targetRobloxUsername}</CardTitle>
                       <CardDescription>
-                        {`Rank ${recommendation.currentRank} → Rank ${recommendation.recommendedRank}`}
+                        {recommendation.currentRankName ? 
+                          `${recommendation.currentRankName} (${recommendation.currentRank}) → ${recommendation.recommendedRankName} (${recommendation.recommendedRank})` : 
+                          `Rank ${recommendation.currentRank} → Rank ${recommendation.recommendedRank}`}
                       </CardDescription>
                     </div>
                   </div>

@@ -1,6 +1,6 @@
-import HyreLanding from "@/components/hyre/landing-page"
+import StaffifyLanding from "@/components/hyre/landing-page"
 
 export default function Home() {
-  return <HyreLanding />
+  return <StaffifyLanding />
 }
 
