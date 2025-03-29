@@ -17,6 +17,7 @@ import {
   Bot,
   Flag,
   MessageCircle,
+  Award,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -68,6 +69,12 @@ export default function WorkspaceSidebar({ workspace, userData }: WorkspaceSideb
       label: "Announcements",
       href: `/workspace/${workspaceId}/announcements`,
       isActive: pathname.includes(`/workspace/${workspaceId}/announcements`),
+    },
+    {
+      icon: Award,
+      label: "Recommendations",
+      href: `/workspace/${workspaceId}/recommendations`,
+      isActive: pathname.includes(`/workspace/${workspaceId}/recommendations`),
     },
     {
       icon: Calendar,
