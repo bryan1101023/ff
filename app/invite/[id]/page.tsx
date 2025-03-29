@@ -149,22 +149,20 @@ export default function InvitePage({ params }: { params: { id: string } }) {
     setError(null)
 
     try {
-      // Always check group membership first, regardless of invite method
+      // Always check that the user has a verified Roblox account
       if (!userData.robloxVerified || !userData.robloxUserId) {
         setError("You must verify your Roblox account before joining a workspace.")
         setIsJoining(false)
         return
       }
 
-      // Check if user has the required rank and is in the group
-      let hasRequiredRank = false
-      let isInGroup = false
-      let userRoleId = 0
-      
-      // Skip group check only for workspace owner
+      // Skip all group and rank checks if this is an invite link
+      // Only check group membership and rank if explicitly required by the workspace
       const isWorkspaceOwner = user.uid === workspace.ownerId
+      const isInviteLink = inviteData !== null
       
-      if (!isWorkspaceOwner) {
+      // If this is not an invite link or the workspace owner, check group membership
+      if (!isInviteLink && !isWorkspaceOwner) {
         try {
           // Fetch user's groups
           const response = await fetch(`/api/roblox/groups?userId=${userData.robloxUserId}`)
@@ -185,37 +183,16 @@ export default function InvitePage({ params }: { params: { id: string } }) {
             return
           }
           
-          isInGroup = true
-          userRoleId = matchingGroup.role.id
-          
-          // Check if invite has a minimum rank requirement
-          if (inviteData && inviteData.minRank) {
-            console.log("Invite has minimum rank requirement:", inviteData.minRank)
-            console.log("User's role ID:", userRoleId)
-            
-            // Check if user's rank is at least the minimum required rank
-            // Note: In Roblox, lower rank numbers are higher in hierarchy (1 is owner)
-            if (userRoleId > inviteData.minRank) {
-              setError(`You need at least the required rank to join this workspace.`)
-              setIsJoining(false)
-              return
-            }
-            
-            hasRequiredRank = true
-          }
-          
-          // If workspace has specific allowed ranks, check those too
+          // Check if workspace has specific allowed ranks
           if (workspace.allowedRanks && workspace.allowedRanks.length > 0) {
-            hasRequiredRank = workspace.allowedRanks.includes(userRoleId)
+            const userRoleId = matchingGroup.role.id
+            const hasRequiredRank = workspace.allowedRanks.includes(userRoleId)
             
             if (!hasRequiredRank) {
               setError("You don't have the required rank to join this workspace.")
               setIsJoining(false)
               return
             }
-          } else {
-            // If no specific ranks are required by the workspace, being in the group is enough
-            hasRequiredRank = true
           }
         } catch (error) {
           console.error("Error checking user groups:", error)
@@ -224,7 +201,39 @@ export default function InvitePage({ params }: { params: { id: string } }) {
           return
         }
       }
-
+      
+      // If this is an invite link and it has a minimum rank requirement, check it
+      if (isInviteLink && inviteData.minRank && !isWorkspaceOwner) {
+        try {
+          // Fetch user's groups
+          const response = await fetch(`/api/roblox/groups?userId=${userData.robloxUserId}`)
+          if (!response.ok) {
+            throw new Error(`Failed to fetch groups: ${response.status}`)
+          }
+          
+          const groups = await response.json()
+          
+          // Find if user is in this group
+          const matchingGroup = groups.find((g: any) => g.id === workspace.groupId)
+          
+          // Only check rank if user is in the group
+          if (matchingGroup) {
+            const userRoleId = matchingGroup.role.id
+            
+            // Check if user's rank is at least the minimum required rank
+            // Note: In Roblox, lower rank numbers are higher in hierarchy (1 is owner)
+            if (userRoleId > inviteData.minRank) {
+              setError(`You need at least the required rank to join this workspace.`)
+              setIsJoining(false)
+              return
+            }
+          }
+        } catch (error) {
+          console.error("Error checking user rank for invite:", error)
+          // Don't block joining if rank check fails - just log the error
+        }
+      }
+      
       // Get the actual workspace ID (in case we're using an invite code)
       const actualWorkspaceId = workspace.id || workspaceId;
       
