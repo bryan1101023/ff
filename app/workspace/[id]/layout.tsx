@@ -152,11 +152,18 @@ export default function WorkspaceLayout({
 
         // Check if user is a member of this workspace
         if (workspaceData.members.includes(authUser.uid)) {
+          // If the user was explicitly added as a member (through invite or other means),
+          // we should allow them access regardless of group membership or rank
+          const wasExplicitlyInvited = true; // Default to true since they're in the members list
+          
           // Now check if the user has the required rank to access this workspace
-          if (userData.robloxVerified && userData.robloxUserId) {
+          // Only perform this check if the workspace has allowedRanks specified
+          if (workspaceData.allowedRanks && workspaceData.allowedRanks.length > 0 && 
+              userData?.robloxVerified && userData?.robloxUserId && 
+              authUser.uid !== workspaceData.ownerId) { // Skip check for workspace owner
             try {
               // Fetch user's groups and ranks
-              const response = await fetch(`/api/roblox/groups?userId=${userData.robloxUserId}`)
+              const response = await fetch(`/api/roblox/groups?userId=${userData?.robloxUserId}`)
               if (response.ok) {
                 const groups = await response.json()
 
@@ -168,35 +175,23 @@ export default function WorkspaceLayout({
                   const userRankId = matchingGroup.role.id
                   const hasRequiredRank = workspaceData.allowedRanks.includes(userRankId)
 
-                  if (hasRequiredRank || workspaceData.ownerId === authUser.uid) {
-                    // User has the required rank or is the workspace owner
-                    setIsAuthorized(true)
-                  } else {
-                    // User doesn't have the required rank
-                    console.log("User doesn't have the required rank to access this workspace")
-                    setIsAuthorized(false)
+                  if (!hasRequiredRank) {
+                    // Only log a warning but still allow access since they were invited
+                    console.log("User doesn't have the required rank but was explicitly invited")
                   }
                 } else {
-                  // User is not in this group
-                  console.log("User is not in the group for this workspace")
-                  setIsAuthorized(false)
+                  // User is not in this group, but was explicitly invited
+                  console.log("User is not in the group but was explicitly invited")
                 }
-              } else {
-                // Fallback to basic authorization if we can't fetch groups
-                // Only allow access if user is the workspace owner
-                setIsAuthorized(workspaceData.ownerId === authUser.uid)
               }
             } catch (error) {
               console.error("Error checking group membership:", error)
-              // Fallback to basic authorization if there's an error
-              // Only allow access if user is the workspace owner
-              setIsAuthorized(workspaceData.ownerId === authUser.uid)
+              // Continue allowing access despite the error
             }
-          } else {
-            // User is not verified with Roblox
-            // Only allow access if user is the workspace owner
-            setIsAuthorized(workspaceData.ownerId === authUser.uid)
           }
+          
+          // Always authorize users who are in the members list
+          setIsAuthorized(true)
         } else {
           // User is not a member of this workspace
           setIsAuthorized(false)
