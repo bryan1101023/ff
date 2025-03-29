@@ -46,16 +46,10 @@ import { signOut } from "@/lib/auth-utils"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { db } from "@/lib/firebase"
 import { doc, setDoc } from "firebase/firestore"
-
-// Add this to the imports at the top
 import { motion } from "framer-motion"
-
-// Add the bug report button to the dashboard
-// Add this import at the top
 import BugReportButton from "@/components/bug-report/bug-report-button"
 import NotificationBell from "@/components/ui/notification-bell"
 
-// Define the WorkspaceCard component
 interface WorkspaceCardProps {
   workspace: any
   isActive: boolean
@@ -127,8 +121,6 @@ const WorkspaceCard: React.FC<WorkspaceCardProps> = ({ workspace, isActive, onSe
 }
 
 export default function DashboardPage() {
-  // Add state for active workspace content and modify the dashboard view
-  // Add this near the top of the component with other state variables
   const [activeWorkspace, setActiveWorkspace] = useState<any>(null)
   const [activeWorkspaceContent, setActiveWorkspaceContent] = useState<string>("overview") // overview, announcements, inactivity, etc.
   const [user, setUser] = useState<any>(null)
@@ -151,10 +143,6 @@ export default function DashboardPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
 
-  // Remove the comment line inside the component that says:
-  // Import the createWorkspaceDeletedNotification function
-
-  // Replace with a function to show the notification when a workspace is deleted
   const showDeletedWorkspaceNotification = (workspace: any) => {
     // Only show the notification if it's not already visible
     if (!showDeletedNotification) {
@@ -169,7 +157,6 @@ export default function DashboardPage() {
     // Remove the database notification code
   }
 
-  // Function to fetch user's Roblox groups if they're already verified
   const fetchVerifiedUserGroups = async () => {
     if (userData?.robloxVerified && userData?.robloxUserId) {
       setIsLoadingGroups(true)
@@ -184,8 +171,6 @@ export default function DashboardPage() {
     }
   }
 
-  // Update the useEffect to not force group selection for new users
-  // and to check for Celesta workspace access after verification
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
       if (authUser) {
@@ -253,28 +238,36 @@ export default function DashboardPage() {
     return () => unsubscribe()
   }, [router, robloxUserId])
 
-  // Cache for user groups to avoid repeated API calls
   const userGroupsCache = new Map<string, any[]>();
 
-  // Add this function to filter workspaces based on user's permissions
   const filterAccessibleWorkspaces = async (workspaces: any[], userId: string, userData: any) => {
     // If there are no workspaces, return empty array immediately
     if (!workspaces || workspaces.length === 0) {
       return [];
     }
     
-    // If user is not verified with Roblox, only show workspaces they own
-    if (!userData?.robloxVerified || !userData?.robloxUserId) {
-      return workspaces.filter((workspace) => workspace.ownerId === userId)
-    }
-
     // First, separate workspaces the user owns (these are always accessible)
     const ownedWorkspaces = workspaces.filter((workspace) => workspace.ownerId === userId);
-    const otherWorkspaces = workspaces.filter((workspace) => workspace.ownerId !== userId);
     
-    // If there are no other workspaces to check, return owned ones immediately
+    // Workspaces where the user is explicitly a member (through invites)
+    const memberWorkspaces = workspaces.filter(
+      (workspace) => workspace.ownerId !== userId && workspace.members && workspace.members.includes(userId)
+    );
+    
+    // Other workspaces that might be accessible through group membership
+    const otherWorkspaces = workspaces.filter(
+      (workspace) => workspace.ownerId !== userId && 
+                     (!workspace.members || !workspace.members.includes(userId))
+    );
+    
+    // If user is not verified with Roblox, only show workspaces they own and are members of
+    if (!userData?.robloxVerified || !userData?.robloxUserId) {
+      return [...ownedWorkspaces, ...memberWorkspaces];
+    }
+    
+    // If there are no other workspaces to check, return owned and member ones immediately
     if (otherWorkspaces.length === 0) {
-      return ownedWorkspaces;
+      return [...ownedWorkspaces, ...memberWorkspaces];
     }
 
     // For verified users, check if they have the required rank for each workspace
@@ -297,7 +290,7 @@ export default function DashboardPage() {
           ]) as Response;
           
           if (!response.ok) {
-            return ownedWorkspaces;
+            return [...ownedWorkspaces, ...memberWorkspaces];
           }
           
           groups = await response.json();
@@ -305,7 +298,7 @@ export default function DashboardPage() {
           userGroupsCache.set(userData.robloxUserId.toString(), groups);
         } catch (error) {
           console.error("Error or timeout fetching groups:", error);
-          return ownedWorkspaces;
+          return [...ownedWorkspaces, ...memberWorkspaces];
         }
       }
 
@@ -323,16 +316,15 @@ export default function DashboardPage() {
         return workspace.allowedRanks?.includes(userRankId) || false
       })
 
-      // Combine owned and accessible workspaces
-      return [...ownedWorkspaces, ...accessibleOtherWorkspaces];
+      // Combine owned, member, and accessible workspaces
+      return [...ownedWorkspaces, ...memberWorkspaces, ...accessibleOtherWorkspaces];
     } catch (error) {
       console.error("Error filtering accessible workspaces:", error)
-      // If there's an error, only show workspaces they own
-      return ownedWorkspaces;
+      // If there's an error, show workspaces they own and are members of
+      return [...ownedWorkspaces, ...memberWorkspaces];
     }
   }
 
-  // Update the useEffect to check for workspace query parameter
   useEffect(() => {
     const workspaceId = searchParams.get("workspace")
     if (workspaceId && workspaces.length > 0) {
@@ -343,7 +335,6 @@ export default function DashboardPage() {
     }
   }, [searchParams, workspaces])
 
-  // Update the useEffect that handles fetching verified user groups
   useEffect(() => {
     if (isCreatingWorkspace && userData?.robloxVerified && userData?.robloxUserId) {
       // Immediately fetch groups when creating workspace as verified user
@@ -363,7 +354,6 @@ export default function DashboardPage() {
     }
   }, [isCreatingWorkspace, userData?.robloxVerified, userData?.robloxUserId])
 
-  // Update the handleCreateWorkspace function to ensure it triggers group fetching
   const handleCreateWorkspace = () => {
     setIsCreatingWorkspace(true)
     setCreatingWorkspaceError(null)
@@ -395,7 +385,6 @@ export default function DashboardPage() {
     }
   }
 
-  // Update the handleGroupSelected function to check for previously deleted groups
   const handleGroupSelected = async (groupId: number, groupName: string, robloxId: number, groupIcon?: string) => {
     // Check if user already has a workspace for this group (including deleted ones)
     const existingWorkspace = workspaces.find((w) => w.groupId === groupId)
@@ -441,7 +430,6 @@ export default function DashboardPage() {
     setSetupStep(2) // Move to group verification
   }
 
-  // Update the handleBioVerified function to go directly to dashboard
   const handleBioVerified = async (username: string, userId: number) => {
     setRobloxUserId(userId)
 
@@ -459,7 +447,6 @@ export default function DashboardPage() {
     setSetupStep(3) // Move to rank selection
   }
 
-  // Update the handleRanksSelected function to include the group icon
   const handleRanksSelected = async (ranks: number[]) => {
     // Prevent multiple clicks from creating multiple workspaces
     if (isCreatingWorkspace) {
@@ -515,7 +502,6 @@ export default function DashboardPage() {
     setIsCreatingWorkspace(false)
   }
 
-  // Update the handleSelectWorkspace function to show workspace content in the dashboard
   const handleSelectWorkspace = async (id: string) => {
     const workspace = workspaces.find((w) => w.id === id)
 
@@ -543,7 +529,6 @@ export default function DashboardPage() {
     }
   }
 
-  // Update the handleVerifiedGroupSelect function to check for previously deleted groups
   const handleVerifiedGroupSelect = async (group: any) => {
     // Check if user already has a workspace for this group (including deleted ones)
     const existingWorkspace = workspaces.find((w) => w.groupId === group.id)
@@ -581,12 +566,10 @@ export default function DashboardPage() {
     setSetupStep(2)
   }
 
-  // Toggle sort order
   const toggleSortOrder = () => {
     setSortOrder(sortOrder === "asc" ? "desc" : "asc")
   }
 
-  // Filter and sort groups
   const getFilteredAndSortedGroups = () => {
     if (!userGroups.length) return []
 
@@ -1151,4 +1134,3 @@ export default function DashboardPage() {
     </>
   )
 }
-

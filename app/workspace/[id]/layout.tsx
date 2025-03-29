@@ -154,10 +154,11 @@ export default function WorkspaceLayout({
         if (workspaceData.members.includes(authUser.uid)) {
           // If the user was explicitly added as a member (through invite or other means),
           // we should allow them access regardless of group membership or rank
-          const wasExplicitlyInvited = true; // Default to true since they're in the members list
           
-          // Now check if the user has the required rank to access this workspace
-          // Only perform this check if the workspace has allowedRanks specified
+          // Always authorize users who are in the members list
+          setIsAuthorized(true)
+          
+          // Log group membership and rank info for monitoring purposes only
           if (workspaceData.allowedRanks && workspaceData.allowedRanks.length > 0 && 
               userData?.robloxVerified && userData?.robloxUserId && 
               authUser.uid !== workspaceData.ownerId) { // Skip check for workspace owner
@@ -189,9 +190,6 @@ export default function WorkspaceLayout({
               // Continue allowing access despite the error
             }
           }
-          
-          // Always authorize users who are in the members list
-          setIsAuthorized(true)
         } else {
           // User is not a member of this workspace
           setIsAuthorized(false)
