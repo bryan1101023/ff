@@ -292,7 +292,7 @@ export default function WorkspaceSettingsPage({ params }: { params: { id: string
       )
 
       // Update the workspace state with the new token
-      setWorkspace((prev) => ({
+      setWorkspace((prev: any) => ({
         ...prev,
         robloxToken: robloxToken,
         robloxUserId: robloxUserInfo.id,
@@ -518,7 +518,7 @@ export default function WorkspaceSettingsPage({ params }: { params: { id: string
     try {
       // Convert string values to numbers for the API
       const expirationHours = inviteExpiration ? parseInt(inviteExpiration) : undefined
-      const minRank = selectedMinRank ? parseInt(selectedMinRank) : undefined
+      const minRank = selectedMinRank && selectedMinRank !== "none" ? parseInt(selectedMinRank) : undefined
       
       // Store the rank name for display
       if (minRank && groupRoles.length > 0) {
@@ -743,7 +743,7 @@ export default function WorkspaceSettingsPage({ params }: { params: { id: string
                   <Input value={workspace?.groupName} disabled />
                   {workspace?.isVerified && (
                     <div className="flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary rounded-md">
-                      <BadgeCheck className="h-4 w-4" />
+                      <BadgeCheck className="h-3 w-3" />
                       <span className="text-xs font-medium">Verified</span>
                     </div>
                   )}
@@ -795,7 +795,11 @@ export default function WorkspaceSettingsPage({ params }: { params: { id: string
                           <div className="flex-1 p-3 bg-muted rounded-l-md border-y border-l text-sm truncate">
                             {`${window.location.origin}/invite/${workspaceId}`}
                           </div>
-                          <Button variant="secondary" className="rounded-l-none" onClick={copyInviteLink}>
+                          <Button
+                            variant="secondary"
+                            className="rounded-l-none"
+                            onClick={copyInviteLink}
+                          >
                             {copied ? <CheckCircle className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                           </Button>
                         </div>
@@ -902,14 +906,14 @@ export default function WorkspaceSettingsPage({ params }: { params: { id: string
                     <Label>Expiration</Label>
                     <div className="flex gap-2">
                       <Select
-                        value={inviteExpiration?.toString() || ""}
-                        onValueChange={(val) => setInviteExpiration(val ? Number.parseInt(val) : null)}
+                        value={inviteExpiration || "none"}
+                        onValueChange={(val) => setInviteExpiration(val === "none" ? null : val)}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Never expires" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">Never expires</SelectItem>
+                          <SelectItem value="none">Never expires</SelectItem>
                           <SelectItem value="24">24 hours</SelectItem>
                           <SelectItem value="48">48 hours</SelectItem>
                           <SelectItem value="168">7 days</SelectItem>
@@ -917,14 +921,14 @@ export default function WorkspaceSettingsPage({ params }: { params: { id: string
                         </SelectContent>
                       </Select>
                       <Select
-                        value={selectedMinRank || ""}
-                        onValueChange={(val) => setSelectedMinRank(val || null)}
+                        value={selectedMinRank || "none"}
+                        onValueChange={(val) => setSelectedMinRank(val === "none" ? null : val)}
                       >
                         <SelectTrigger className="w-full">
                           <SelectValue placeholder="Minimum rank required" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">No minimum rank</SelectItem>
+                          <SelectItem value="none">No minimum rank</SelectItem>
                           {groupRoles.map((role) => (
                             <SelectItem key={role.id} value={role.id.toString()}>
                               {role.name}
@@ -1436,8 +1440,8 @@ export default function WorkspaceSettingsPage({ params }: { params: { id: string
         </TabsContent>
       </Tabs>
       {restrictions && (
-        <Alert variant="warning" className="mt-6">
-          <AlertTriangle className="h-4 w-4" />
+        <Alert className="mt-6 border-amber-500/50 bg-amber-500/10">
+          <AlertTriangle className="h-4 w-4 text-amber-500" />
           <AlertTitle>Workspace Restrictions</AlertTitle>
           <AlertDescription>
             This workspace has been restricted from using certain features.

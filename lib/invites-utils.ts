@@ -3,7 +3,7 @@ import { db } from "./firebase"
 import { nanoid } from "nanoid"
 
 // Generate a unique invite code
-export async function generateInviteCode(workspaceId: string, expiresIn?: number): Promise<string> {
+export async function generateInviteCode(workspaceId: string, expiresIn?: number, minRank?: number): Promise<string> {
   try {
     // Generate a unique code
     const inviteCode = nanoid(10)
@@ -20,6 +20,7 @@ export async function generateInviteCode(workspaceId: string, expiresIn?: number
       createdAt: Date.now(),
       expiresAt,
       isActive: true,
+      minRank: minRank || null, // Store minimum rank requirement
     })
 
     return inviteCode
@@ -74,4 +75,3 @@ export async function getWorkspaceInvites(workspaceId: string): Promise<any[]> {
     return []
   }
 }
-
