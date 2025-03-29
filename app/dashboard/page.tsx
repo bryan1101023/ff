@@ -838,7 +838,10 @@ export default function DashboardPage() {
         <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/[0.03] via-transparent to-rose-500/[0.03] blur-3xl" />
 
         <div className="relative z-10 max-w-3xl mx-auto">
-          <WorkspaceCreation onComplete={handleWorkspaceCreated} />
+          <WorkspaceCreation 
+            onComplete={handleWorkspaceCreated} 
+            selectedRanks={selectedRanks}
+          />
         </div>
       </div>
     )
