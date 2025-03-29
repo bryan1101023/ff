@@ -74,9 +74,11 @@ export default function WorkspaceSettingsPage({ params }: { params: { id: string
   const [isSendingInvite, setIsSendingInvite] = useState(false)
   const [invites, setInvites] = useState<any[]>([])
   const [isLoadingInvites, setIsLoadingInvites] = useState(false)
-  const [inviteExpiration, setInviteExpiration] = useState<number | null>(null)
+  const [inviteExpiration, setInviteExpiration] = useState<string | null>(null)
   const [isGeneratingInvite, setIsGeneratingInvite] = useState(false)
   const [newInviteCode, setNewInviteCode] = useState<string | null>(null)
+  const [selectedMinRank, setSelectedMinRank] = useState<string | null>(null)
+  const [minRankName, setMinRankName] = useState<string | null>(null)
   const [groupShout, setGroupShout] = useState("")
   const [isUpdatingShout, setIsUpdatingShout] = useState(false)
   const [groupInfo, setGroupInfo] = useState<any>(null)
@@ -326,22 +328,13 @@ export default function WorkspaceSettingsPage({ params }: { params: { id: string
     setRobloxUserInfo(null)
   }
 
-  const handleThemeChange = async (newTheme: string) => {
-    try {
-      setTheme(newTheme)
-      await updateWorkspaceTheme(workspaceId, newTheme)
-      toast({
-        title: "Theme updated",
-        description: `Workspace theme set to ${newTheme} mode.`,
-      })
-    } catch (error) {
-      console.error("Error updating theme:", error)
-      toast({
-        title: "Error",
-        description: "Failed to update theme. Please try again.",
-        variant: "destructive",
-      })
-    }
+  const handleThemeChange = (theme: string) => {
+    setTheme(theme)
+    updateWorkspaceTheme(workspaceId, theme)
+    toast({
+      title: "Theme updated",
+      description: `Workspace theme set to ${theme} mode.`,
+    })
   }
 
   const handleRankToggle = (rankId: number) => {
@@ -523,7 +516,22 @@ export default function WorkspaceSettingsPage({ params }: { params: { id: string
   const handleGenerateInvite = async () => {
     setIsGeneratingInvite(true)
     try {
-      const code = await generateInviteCode(workspaceId, inviteExpiration || undefined)
+      // Convert string values to numbers for the API
+      const expirationHours = inviteExpiration ? parseInt(inviteExpiration) : undefined
+      const minRank = selectedMinRank ? parseInt(selectedMinRank) : undefined
+      
+      // Store the rank name for display
+      if (minRank && groupRoles.length > 0) {
+        const rankInfo = groupRoles.find(role => role.id === minRank)
+        if (rankInfo) {
+          setMinRankName(rankInfo.name)
+        }
+      } else {
+        setMinRankName(null)
+      }
+      
+      // Generate the invite code with the minimum rank requirement
+      const code = await generateInviteCode(workspaceId, expirationHours, minRank)
       setNewInviteCode(code)
 
       // Refresh invites list
@@ -901,11 +909,27 @@ export default function WorkspaceSettingsPage({ params }: { params: { id: string
                           <SelectValue placeholder="Never expires" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="0">Never expires</SelectItem>
+                          <SelectItem value="">Never expires</SelectItem>
                           <SelectItem value="24">24 hours</SelectItem>
                           <SelectItem value="48">48 hours</SelectItem>
                           <SelectItem value="168">7 days</SelectItem>
                           <SelectItem value="720">30 days</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Select
+                        value={selectedMinRank || ""}
+                        onValueChange={(val) => setSelectedMinRank(val || null)}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Minimum rank required" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">No minimum rank</SelectItem>
+                          {groupRoles.map((role) => (
+                            <SelectItem key={role.id} value={role.id.toString()}>
+                              {role.name}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                       <Button onClick={handleGenerateInvite} disabled={isGeneratingInvite}>
@@ -925,9 +949,16 @@ export default function WorkspaceSettingsPage({ params }: { params: { id: string
                     <div className="p-4 border rounded-lg bg-muted/30">
                       <div className="flex justify-between items-center mb-2">
                         <h4 className="font-medium">New Invite Link</h4>
-                        <Badge variant="outline" className="text-primary">
-                          {inviteExpiration ? `Expires in ${inviteExpiration} hours` : "Never expires"}
-                        </Badge>
+                        <div className="flex gap-2">
+                          {minRankName && (
+                            <Badge variant="outline" className="text-amber-500">
+                              Min Rank: {minRankName}
+                            </Badge>
+                          )}
+                          <Badge variant="outline" className="text-primary">
+                            {inviteExpiration ? `Expires in ${inviteExpiration} hours` : "Never expires"}
+                          </Badge>
+                        </div>
                       </div>
                       <div className="flex">
                         <div className="flex-1 p-3 bg-muted rounded-l-md border-y border-l text-sm truncate">
@@ -1245,7 +1276,7 @@ export default function WorkspaceSettingsPage({ params }: { params: { id: string
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <Alert className="mb-4">
+                  <Alert>
                     <AlertDescription>
                       Link your Roblox account to enable group management features. Your account token is used to
                       authenticate with Roblox and is stored securely.

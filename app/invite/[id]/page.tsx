@@ -23,6 +23,7 @@ export default function InvitePage({ params }: { params: { id: string } }) {
   const [isJoining, setIsJoining] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [inviteData, setInviteData] = useState<any>(null)
   const router = useRouter()
   const { id: workspaceId } = params
 
@@ -50,6 +51,9 @@ export default function InvitePage({ params }: { params: { id: string } }) {
             setError("This invite has expired.");
             return;
           }
+          
+          // Store the invite data for later use (including minimum rank)
+          setInviteData(invite);
           
           console.log("Found invite code, resolving to workspace ID:", invite.workspaceId);
           actualWorkspaceId = invite.workspaceId;
@@ -155,6 +159,7 @@ export default function InvitePage({ params }: { params: { id: string } }) {
       // Check if user has the required rank and is in the group
       let hasRequiredRank = false
       let isInGroup = false
+      let userRoleId = 0
       
       // Skip group check only for workspace owner
       const isWorkspaceOwner = user.uid === workspace.ownerId
@@ -181,10 +186,26 @@ export default function InvitePage({ params }: { params: { id: string } }) {
           }
           
           isInGroup = true
+          userRoleId = matchingGroup.role.id
           
-          // Check if user's rank is in the allowed ranks (if specified)
+          // Check if invite has a minimum rank requirement
+          if (inviteData && inviteData.minRank) {
+            console.log("Invite has minimum rank requirement:", inviteData.minRank)
+            console.log("User's role ID:", userRoleId)
+            
+            // Check if user's rank is at least the minimum required rank
+            // Note: In Roblox, lower rank numbers are higher in hierarchy (1 is owner)
+            if (userRoleId > inviteData.minRank) {
+              setError(`You need at least the required rank to join this workspace.`)
+              setIsJoining(false)
+              return
+            }
+            
+            hasRequiredRank = true
+          }
+          
+          // If workspace has specific allowed ranks, check those too
           if (workspace.allowedRanks && workspace.allowedRanks.length > 0) {
-            const userRoleId = matchingGroup.role.id
             hasRequiredRank = workspace.allowedRanks.includes(userRoleId)
             
             if (!hasRequiredRank) {
@@ -192,6 +213,9 @@ export default function InvitePage({ params }: { params: { id: string } }) {
               setIsJoining(false)
               return
             }
+          } else {
+            // If no specific ranks are required by the workspace, being in the group is enough
+            hasRequiredRank = true
           }
         } catch (error) {
           console.error("Error checking user groups:", error)
@@ -373,4 +397,3 @@ export default function InvitePage({ params }: { params: { id: string } }) {
     </div>
   )
 }
-
