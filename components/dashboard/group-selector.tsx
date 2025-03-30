@@ -97,20 +97,28 @@ export default function GroupSelector({
     }
   }
 
-  // Update the handleGroupSelected function to check for deleted workspaces
+  // Update the handleGroupSelected function to ensure we're passing primitives
   const handleSelectGroup = async (group: Group) => {
-    // Check if user already has a workspace for this group (including deleted ones)
     try {
-      // This would be a check against your database to see if this group had a deleted workspace
-      // For now, we'll simulate this with a direct call to the parent component
-      onGroupSelected(
-        group.id,
-        group.name,
-        initialRobloxUserId || (robloxUserId ? Number.parseInt(robloxUserId) : 0),
-        group.icon,
-      )
+      // Ensure all values passed to onGroupSelected are primitives
+      const groupId = typeof group.id === 'number' ? group.id : Number(group.id || 0);
+      const groupName = typeof group.name === 'string' ? group.name : String(group.name || '');
+      const userId = initialRobloxUserId || (robloxUserId ? Number.parseInt(robloxUserId) : 0);
+      const iconUrl = typeof group.icon === 'string' ? group.icon : '';
+      
+      // Log for debugging
+      console.log('Selecting group with data:', { 
+        groupId, 
+        groupName, 
+        userId, 
+        iconUrl 
+      });
+      
+      // Call the parent component's handler with validated data
+      onGroupSelected(groupId, groupName, userId, iconUrl);
     } catch (err: any) {
-      setError(err.message || "Failed to select group")
+      console.error('Error in handleSelectGroup:', err);
+      setError(err.message || "Failed to select group");
     }
   }
 
@@ -201,7 +209,7 @@ export default function GroupSelector({
                   <div className="flex-1 min-w-0">
                     <h3 className="font-medium truncate">{group.name}</h3>
                     <p className="text-sm text-muted-foreground">
-                      {group.role} • {group.memberCount.toLocaleString()} members
+                      {group.role ? String(group.role) : 'Member'} • {typeof group.memberCount === 'number' ? group.memberCount.toLocaleString() : '0'} members
                     </p>
                   </div>
                 </div>
@@ -213,4 +221,3 @@ export default function GroupSelector({
     </Card>
   )
 }
-

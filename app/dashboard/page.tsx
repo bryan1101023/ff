@@ -50,6 +50,14 @@ import { motion } from "framer-motion"
 import BugReportButton from "@/components/bug-report/bug-report-button"
 import NotificationBell from "@/components/ui/notification-bell"
 
+// Define the RobloxRole interface for consistent typing
+interface RobloxRole {
+  id: number;
+  name: string;
+  rank: number;
+  memberCount?: number;
+}
+
 interface WorkspaceCardProps {
   workspace: any
   isActive: boolean
@@ -129,7 +137,7 @@ export default function DashboardPage() {
   const [setupStep, setSetupStep] = useState(0)
   const [robloxUserId, setRobloxUserId] = useState<number | null>(null)
   const [selectedGroup, setSelectedGroup] = useState<any>(null)
-  const [groupRanks, setGroupRanks] = useState<any[]>([])
+  const [groupRanks, setGroupRanks] = useState<Array<RobloxRole>>([])
   const [selectedRanks, setSelectedRanks] = useState<number[]>([])
   const [workspaceId, setWorkspaceId] = useState<string>("")
   const [workspaces, setWorkspaces] = useState<any[]>([])
@@ -354,20 +362,43 @@ export default function DashboardPage() {
     }
   }, [isCreatingWorkspace, userData?.robloxVerified, userData?.robloxUserId])
 
+  useEffect(() => {
+    // If user is at step 1 and already verified, skip to group selection
+    if (setupStep === 1 && userData?.robloxVerified && userData?.robloxUserId) {
+      console.log('User is already verified, skipping to group selection with robloxUserId:', userData.robloxUserId);
+      // Make sure to set the robloxUserId from userData
+      setRobloxUserId(userData.robloxUserId);
+      // Then move to step 2
+      setSetupStep(2);
+    }
+  }, [setupStep, userData?.robloxVerified, userData?.robloxUserId]);
+
   const handleCreateWorkspace = () => {
+    console.log('handleCreateWorkspace called');
     setIsCreatingWorkspace(true)
     setCreatingWorkspaceError(null)
     setSearchQuery("")
 
     // If user is already verified, skip to group selection from their verified account
     if (userData?.robloxVerified) {
-      setSetupStep(0) // Use the modified group selection that uses their verified account
+      console.log('User is already verified, setting step to 1 (group selection)');
+      
+      // Make sure to set the robloxUserId from userData
+      if (userData.robloxUserId) {
+        console.log('Setting robloxUserId from userData:', userData.robloxUserId);
+        setRobloxUserId(userData.robloxUserId);
+      } else {
+        console.error('User is verified but robloxUserId is missing in userData');
+      }
+      
+      setSetupStep(1) // Set to step 1 (group selection) instead of 0
 
       // Immediately fetch groups if we have the robloxUserId
       if (userData.robloxUserId) {
         const fetchGroups = async () => {
           setIsLoadingGroups(true)
           try {
+            console.log('Fetching groups for verified user:', userData.robloxUserId);
             const groups = await getUserGroups(userData.robloxUserId)
             setUserGroups(groups)
           } catch (error) {
@@ -376,7 +407,6 @@ export default function DashboardPage() {
             setIsLoadingGroups(false)
           }
         }
-
         fetchGroups()
       }
     } else {
@@ -386,48 +416,71 @@ export default function DashboardPage() {
   }
 
   const handleGroupSelected = async (groupId: number, groupName: string, robloxId: number, groupIcon?: string) => {
-    // Check if user already has a workspace for this group (including deleted ones)
-    const existingWorkspace = workspaces.find((w) => w.groupId === groupId)
-    const isDeleted = existingWorkspace?.isDeleted
+    // Create a properly structured group object
+    const group = {
+      id: groupId,
+      name: groupName,
+      icon: groupIcon || ''
+    };
+    
+    console.log('handleGroupSelected called with:', { groupId, groupName, robloxId, groupIcon });
+    
+    setSelectedGroup(group);
+    setCreatingWorkspaceError(null);
 
-    if (existingWorkspace) {
-      if (isDeleted) {
-        // Check if user is immune
-        if (userData?.isImmune) {
-          // Immune users can recreate deleted workspaces
-          setSelectedGroup({ id: groupId, name: groupName, icon: groupIcon })
-          setRobloxUserId(robloxId)
-          setCreatingWorkspaceError(null)
+    try {
+      console.log(`Fetching group roles for groupId: ${groupId}`);
+      const response = await fetch(`/api/roblox/group-roles?groupId=${groupId}`, {
+        // Add cache control headers to prevent caching issues
+        cache: 'no-store'
+      });
+      
+      // Check response format before attempting to parse JSON
+      const contentType = response.headers.get('content-type');
+      console.log(`Response content type: ${contentType}`);
+      
+      if (!contentType || !contentType.includes('application/json')) {
+        const textResponse = await response.text();
+        console.error('Non-JSON response received:', textResponse.substring(0, 200));
+        throw new Error(`Expected JSON response but got ${contentType || 'unknown content type'}`);
+      }
+      
+      const data = await response.json();
+      console.log('Group roles API response structure:', data ? (Array.isArray(data) ? `Array with ${data.length} items` : typeof data) : 'null');
 
-          // Update in database
-          if (user) {
-            await updateSelectedGroup(user.uid, groupId, groupName)
-          }
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to fetch group roles')
+      }
 
-          setSetupStep(2) // Move to group verification
-          return
+      // Ensure data is an array
+      if (!Array.isArray(data)) {
+        throw new Error('Invalid response format: expected an array of roles')
+      }
+
+      // Transform and validate the roles data
+      const formattedRanks = data.map(role => {
+        if (!role || typeof role !== 'object') {
+          throw new Error('Invalid role format')
         }
 
-        setCreatingWorkspaceError(
-          `This group's workspace was previously deleted and cannot be recreated. Please select a different group.`,
-        )
-        return
-      } else {
-        setCreatingWorkspaceError(`You already have a workspace for ${groupName}. Please select a different group.`)
-        return
-      }
+        return {
+          id: Number(role.id),
+          name: String(role.name || ''),
+          rank: Number(role.rank),
+          memberCount: role.memberCount ? Number(role.memberCount) : undefined
+        }
+      })
+
+      setGroupRanks(formattedRanks)
+      setSetupStep(3)
+    } catch (error) {
+      console.error('Error fetching group roles:', error)
+      setCreatingWorkspaceError(
+        error instanceof Error 
+          ? error.message 
+          : 'Failed to fetch group roles. Please try again.'
+      )
     }
-
-    setSelectedGroup({ id: groupId, name: groupName, icon: groupIcon })
-    setRobloxUserId(robloxId) // Make sure to set the Roblox user ID here
-    setCreatingWorkspaceError(null)
-
-    // Update in database
-    if (user) {
-      await updateSelectedGroup(user.uid, groupId, groupName)
-    }
-
-    setSetupStep(2) // Move to group verification
   }
 
   const handleBioVerified = async (username: string, userId: number) => {
@@ -443,43 +496,87 @@ export default function DashboardPage() {
   }
 
   const handleGroupVerified = (ranks: any[]) => {
-    setGroupRanks(ranks)
-    setSetupStep(3) // Move to rank selection
+    // Ensure ranks is an array
+    if (!Array.isArray(ranks)) {
+      console.error('Received non-array ranks:', ranks);
+      setCreatingWorkspaceError('Invalid ranks format received. Please try again.');
+      return;
+    }
+    
+    // Ensure ranks are properly formatted
+    const formattedRanks = ranks.map(rank => {
+      // Make sure each property has a fallback value
+      return {
+        id: Number(rank?.id || 0),
+        name: String(rank?.name || ''),
+        rank: Number(rank?.rank || 0),
+        memberCount: rank?.memberCount ? Number(rank.memberCount) : undefined
+      };
+    });
+    
+    console.log('Formatted ranks in dashboard:', formattedRanks);
+    setGroupRanks(formattedRanks);
+    setSetupStep(3); // Move to rank selection
   }
 
   const handleRanksSelected = async (ranks: number[]) => {
-    // Prevent multiple clicks from creating multiple workspaces
-    if (isCreatingWorkspace) {
-      return
+    // Debug log for ranks
+    console.log('handleRanksSelected called with ranks:', JSON.stringify(ranks));
+    
+    // Validate that ranks is an array of numbers
+    if (!Array.isArray(ranks)) {
+      console.error('ranks is not an array:', ranks);
+      setCreatingWorkspaceError('Invalid ranks format. Please try again.');
+      return;
     }
     
-    setIsCreatingWorkspace(true)
-    setSelectedRanks(ranks)
-    setCreatingWorkspaceError(null)
-
-    try {
-      // Actually create the workspace in the database
-      if (user && selectedGroup) {
-        const workspace = await createWorkspace(
-          user.uid,
-          selectedGroup.id,
-          selectedGroup.name,
-          ranks,
-          selectedGroup.icon, // Pass the icon from the selectedGroup
-        )
-        setWorkspaceId(workspace.id)
-
-        // Show creation animation
-        setSetupStep(3.5) // Workspace creation animation
-      } else {
-        throw new Error("Missing user or group information")
+    // Ensure all ranks are numbers
+    const validRanks = ranks.map(id => Number(id));
+    console.log('Converted ranks to numbers:', JSON.stringify(validRanks));
+    
+    // Reset states to ensure a fresh start
+    setIsCreatingWorkspace(true);
+    setSelectedRanks(validRanks);
+    setCreatingWorkspaceError(null);
+    
+    // Immediately show the animation
+    setSetupStep(3.5);
+    
+    // Add a small delay to allow the animation to start
+    setTimeout(async () => {
+      try {
+        // Actually create the workspace in the database
+        if (user && selectedGroup) {
+          console.log('Creating workspace with:', {
+            userId: user.uid,
+            groupId: selectedGroup.id,
+            groupName: selectedGroup.name,
+            rankIds: validRanks,
+            icon: selectedGroup.icon || ''
+          });
+          
+          const workspace = await createWorkspace(
+            user.uid,
+            selectedGroup.id,
+            selectedGroup.name,
+            validRanks,
+            selectedGroup.icon
+          );
+          
+          console.log('Workspace created successfully:', workspace);
+          setWorkspaceId(workspace.id);
+          
+          // The WorkspaceCreation component will call handleWorkspaceCreated when done
+        } else {
+          throw new Error("Missing user or group information");
+        }
+      } catch (error) {
+        console.error("Error creating workspace:", error);
+        setCreatingWorkspaceError("Failed to create workspace. Please try again.");
+        setIsCreatingWorkspace(false);
+        setSetupStep(3); // Go back to rank selection on error
       }
-    } catch (error) {
-      console.error("Error creating workspace:", error)
-      setCreatingWorkspaceError("Failed to create workspace. Please try again.")
-      setIsCreatingWorkspace(false) // Reset creation state on error
-      // Stay on the current step
-    }
+    }, 500);
   }
 
   const handleWorkspaceCreated = async () => {
@@ -594,8 +691,9 @@ export default function DashboardPage() {
     )
   }
 
-  // Bio verification step
-  if (setupStep === 1) {
+  // Bio verification step - only show if user is not verified
+  if (setupStep === 1 && !userData?.robloxVerified) {
+    console.log('Showing bio verification because user is not verified');
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#030303] p-4">
         <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/[0.03] via-transparent to-rose-500/[0.03] blur-3xl" />
@@ -603,6 +701,15 @@ export default function DashboardPage() {
         <div className="relative z-10 w-full max-w-md">
           <BioVerification onVerified={handleBioVerified} />
         </div>
+      </div>
+    )
+  }
+  
+  // Show loading while transitioning from step 1 to 2 for verified users
+  if (setupStep === 1 && userData?.robloxVerified) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#030303]">
+        <Loader2 className="h-8 w-8 animate-spin text-white/60" />
       </div>
     )
   }
@@ -805,9 +912,28 @@ export default function DashboardPage() {
       </div>
     )
   }
+  
+  // If we're at step 2 but missing data, go back to group selection
+  if (setupStep === 2 && (!selectedGroup || !robloxUserId)) {
+    console.log('Missing data for group verification, returning to group selection');
+    // Use setTimeout to avoid state updates during render
+    setTimeout(() => {
+      setSetupStep(0);
+    }, 0);
+    
+    // Show loading while transitioning
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#030303]">
+        <Loader2 className="h-8 w-8 animate-spin text-white/60" />
+      </div>
+    )
+  }
 
   // Rank selection step
   if (setupStep === 3 && groupRanks.length > 0) {
+    // Debug log for groupRanks
+    console.log('Rendering rank selection with groupRanks:', JSON.stringify(groupRanks));
+    
     return (
       <div className="min-h-screen bg-[#030303] p-4 md:p-8">
         <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/[0.03] via-transparent to-rose-500/[0.03] blur-3xl" />
@@ -825,7 +951,11 @@ export default function DashboardPage() {
             </Alert>
           )}
 
-          <RankSelection ranks={groupRanks} onComplete={handleRanksSelected} onBack={() => setSetupStep(2)} />
+          <RankSelection 
+            ranks={groupRanks} 
+            onComplete={handleRanksSelected} 
+            onBack={() => setSetupStep(2)} 
+          />
         </div>
       </div>
     )
@@ -833,6 +963,14 @@ export default function DashboardPage() {
 
   // Workspace creation animation
   if (setupStep === 3.5) {
+    // Debug log for selectedRanks
+    console.log('Rendering workspace creation with selectedRanks:', JSON.stringify(selectedRanks));
+    
+    // Ensure selectedRanks is an array of numbers
+    const safeRanks = Array.isArray(selectedRanks) 
+      ? selectedRanks.map(r => typeof r === 'number' ? r : Number(r))
+      : [];
+    
     return (
       <div className="min-h-screen bg-[#030303] p-4 md:p-8">
         <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/[0.03] via-transparent to-rose-500/[0.03] blur-3xl" />
@@ -840,27 +978,25 @@ export default function DashboardPage() {
         <div className="relative z-10 max-w-3xl mx-auto">
           <WorkspaceCreation 
             onComplete={handleWorkspaceCreated} 
-            selectedRanks={selectedRanks}
+            selectedRanks={safeRanks} 
           />
         </div>
       </div>
     )
   }
 
-  // Modify the dashboard view to show workspace content when a workspace is active
-  // Replace the existing dashboard view (setupStep === 4) with this:
-  // Fallback
-  if (setupStep !== 4) {
+  // Fallback for any unhandled steps
+  if (setupStep !== 0 && setupStep !== 1 && setupStep !== 2 && setupStep !== 3 && setupStep !== 3.5 && setupStep !== 4) {
+    console.log(`Unhandled setup step: ${setupStep}, redirecting to dashboard`);
+    // Use setTimeout to avoid state updates during render
+    setTimeout(() => {
+      setSetupStep(4);
+    }, 0);
+    
+    // Show loading while transitioning
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#030303]">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-white mb-4">Something went wrong</h1>
-          <p className="text-white/60 mb-4">
-            Debug info: Step {setupStep}, RobloxUserId: {robloxUserId ? "Set" : "Not set"}, SelectedGroup:{" "}
-            {selectedGroup ? "Set" : "Not set"}
-          </p>
-          <Button onClick={() => router.push("/beta")}>Return to Login</Button>
-        </div>
+        <Loader2 className="h-8 w-8 animate-spin text-white/60" />
       </div>
     )
   }

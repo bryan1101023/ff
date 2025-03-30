@@ -8,13 +8,20 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2, ShieldCheck, AlertTriangle } from "lucide-react"
 import { motion } from "framer-motion"
 
+interface RobloxRole {
+  id: number;
+  name: string;
+  rank: number;
+  memberCount?: number;
+}
+
 interface GroupVerificationProps {
-  userId: string
-  robloxUserId: number
-  groupId: number
-  groupName: string
-  onVerified: (ranks: any[]) => void
-  onCancel: () => void
+  userId: string;
+  robloxUserId: number;
+  groupId: number;
+  groupName: string;
+  onVerified: (ranks: RobloxRole[]) => void;
+  onCancel: () => void;
 }
 
 export default function GroupVerification({
@@ -28,7 +35,9 @@ export default function GroupVerification({
   const [isVerifying, setIsVerifying] = useState(false)
   const [isVerified, setIsVerified] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [ranks, setRanks] = useState<any[]>([])
+  const [ranks, setRanks] = useState<RobloxRole[]>([])
+  const [verificationRole, setVerificationRole] = useState<string>('')
+  const [verificationRank, setVerificationRank] = useState<number>(0)
 
   useEffect(() => {
     verifyOwnership()
@@ -42,8 +51,25 @@ export default function GroupVerification({
       const result = await verifyGroupOwnership(robloxUserId, groupId)
 
       if (result.verified) {
+        // Ensure result.ranks is an array before mapping
+        const formattedRanks = Array.isArray(result.ranks) 
+          ? result.ranks.map((rank: any) => ({
+              id: Number(rank.id || 0),
+              name: String(rank.name || ''),
+              rank: Number(rank.rank || 0),
+              memberCount: rank.memberCount ? Number(rank.memberCount) : undefined
+            })) 
+          : [];
+        
+        // Log the formatted ranks for debugging
+        console.log('Formatted ranks:', formattedRanks);
+        
         setIsVerified(true)
-        setRanks(result.ranks || [])
+        setRanks(formattedRanks)
+        
+        // Store role and rank as separate strings/numbers, not objects
+        setVerificationRole(String(result.role || ''))
+        setVerificationRank(Number(result.rank || 0))
       } else {
         setError(result.message || "Failed to verify group ownership")
       }
@@ -55,7 +81,13 @@ export default function GroupVerification({
   }
 
   const handleContinue = () => {
-    onVerified(ranks)
+    // Ensure ranks is an array before passing it to onVerified
+    if (Array.isArray(ranks)) {
+      onVerified(ranks)
+    } else {
+      setError("Unexpected verification result format. Please try again.")
+      console.error("Ranks is not an array:", ranks)
+    }
   }
 
   return (
@@ -88,7 +120,12 @@ export default function GroupVerification({
                 <ShieldCheck className="h-8 w-8 text-green-500" />
               </div>
               <h3 className="text-xl font-bold mb-2">Verification Successful!</h3>
-              <p className="text-muted-foreground mb-6">You have been verified as a manager of {groupName}</p>
+              <p className="text-muted-foreground mb-2">You have been verified as a manager of {groupName}</p>
+              {verificationRole && (
+                <p className="text-sm text-muted-foreground mb-6">
+                  Your role: {verificationRole} (Rank {verificationRank})
+                </p>
+              )}
               <Button onClick={handleContinue} className="w-full">
                 Continue to Rank Selection
               </Button>
@@ -100,14 +137,14 @@ export default function GroupVerification({
               </div>
               <h3 className="text-xl font-bold mb-2">Verification Failed</h3>
               <p className="text-muted-foreground mb-6">
-                We couldn't verify your ownership of this group. Please make sure you have sufficient permissions.
+                {error || "We couldn't verify your ownership of this group. Please try again."}
               </p>
-              <div className="flex gap-3">
-                <Button variant="outline" onClick={onCancel} className="flex-1">
-                  Go Back
-                </Button>
-                <Button onClick={verifyOwnership} className="flex-1">
+              <div className="flex flex-col space-y-2 sm:flex-row sm:space-y-0 sm:space-x-2">
+                <Button variant="outline" onClick={verifyOwnership} className="flex-1">
                   Try Again
+                </Button>
+                <Button variant="outline" onClick={onCancel} className="flex-1">
+                  Cancel
                 </Button>
               </div>
             </div>
@@ -117,4 +154,3 @@ export default function GroupVerification({
     </Card>
   )
 }
-

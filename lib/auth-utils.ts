@@ -139,28 +139,27 @@ export async function getAllUsers(): Promise<User[]> {
 // Verify admin password
 export async function verifyAdminPassword(password: string): Promise<boolean> {
   try {
-    // For local development, allow the hardcoded password
-    if (password === "5566") {
+    // Get the admin password from environment variables
+    const adminPassword = process.env.NEXT_PUBLIC_ADMIN_PASSWORD;
+    const storedHash = process.env.NEXT_PUBLIC_ADMIN_PASSWORD_HASH;
+    
+    // First check if we have a direct password match (not recommended for production)
+    if (adminPassword && password === adminPassword) {
       return true;
     }
     
-    // For production, check against the environment variable
-    const storedHash = process.env.NEXT_PUBLIC_ADMIN_PASSWORD_HASH
-    
-    if (!storedHash) {
-      // If no environment variable is set, we're likely in development
-      // and already checked the hardcoded password above
-      console.log("Admin password hash not configured in environment variables, using development password")
-      return false
+    // Then check against the hash (more secure approach)
+    if (storedHash) {
+      const hashedPassword = await hashPassword(password);
+      return hashedPassword === storedHash;
     }
     
-    // In a real production environment, you would use a proper password hashing library
-    // like bcrypt, but for this example, we'll use a simple hash comparison
-    const hashedPassword = await hashPassword(password)
-    return hashedPassword === storedHash
+    // If no environment variables are set, log a warning
+    console.warn("Admin password not configured in environment variables. This is a security risk.");
+    return false;
   } catch (error) {
-    console.error("Error verifying admin password:", error)
-    return false
+    console.error("Error verifying admin password:", error);
+    return false;
   }
 }
 

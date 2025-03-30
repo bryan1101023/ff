@@ -25,22 +25,62 @@ export async function getUserIdFromUsername(username: string): Promise<number | 
 // Get user's groups
 export async function getUserGroups(userId: number) {
   try {
-    const response = await fetch(`/api/roblox/groups?userId=${userId}`)
+    console.log(`Fetching groups for user ID: ${userId}`);
+    
+    if (!userId) {
+      console.error('Invalid userId provided to getUserGroups:', userId);
+      throw new Error('Invalid user ID');
+    }
+    
+    const response = await fetch(`/api/roblox/groups?userId=${userId}`, {
+      // Add cache control to prevent caching issues
+      cache: 'no-store',
+      headers: {
+        'Accept': 'application/json'
+      }
+    });
 
+    // Log response status
+    console.log(`Groups API response status: ${response.status}`);
+    
     if (!response.ok) {
-      const errorData = await response.json()
-      throw new Error(errorData.error || "Failed to fetch group data")
+      // Check content type before trying to parse JSON
+      const contentType = response.headers.get('content-type');
+      
+      if (contentType && contentType.includes('application/json')) {
+        const errorData = await response.json();
+        console.error('Error response from groups API:', errorData);
+        throw new Error(errorData.error || "Failed to fetch group data");
+      } else {
+        // Handle non-JSON error responses
+        const errorText = await response.text();
+        console.error(`Non-JSON error response (${response.status}):`, errorText.substring(0, 200));
+        throw new Error(`API returned ${response.status}: Non-JSON response`);
+      }
     }
 
-    const data = await response.json()
+    // Check content type before parsing
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      const text = await response.text();
+      console.error('Expected JSON but got:', text.substring(0, 200));
+      throw new Error('Invalid response format: not JSON');
+    }
+
+    const data = await response.json();
+    console.log(`Received groups data: ${JSON.stringify(data).substring(0, 100)}...`);
 
     if (Array.isArray(data)) {
-      return data
+      console.log(`Found ${data.length} groups for user`);
+      return data;
     }
-    return []
+    
+    console.warn('Response was not an array, returning empty array');
+    return [];
   } catch (error) {
-    console.error("Error fetching Roblox user groups:", error)
-    throw error
+    console.error("Error fetching Roblox user groups:", error);
+    // Return empty array instead of throwing to prevent UI from breaking
+    return [];
   }
 }
 
@@ -114,4 +154,3 @@ export async function verifyBioCode(username: string, code: string) {
     throw error
   }
 }
-
