@@ -1,6 +1,22 @@
 import { NextResponse } from "next/server"
-import { db } from "@/lib/firebase"
 import { collection, query, where, getDocs } from "firebase/firestore"
+import { initializeApp } from "firebase/app"
+import { getFirestore } from "firebase/firestore"
+
+// Hardcode Firebase config directly in this file
+const firebaseConfig = {
+  apiKey: "AIzaSyCYb_AD2mPoBv6o-oaJUBv9ZWvGcQ6LY8I",
+  authDomain: "loll-8b3ea.firebaseapp.com",
+  databaseURL: "https://loll-8b3ea-default-rtdb.firebaseio.com",
+  projectId: "loll-8b3ea",
+  storageBucket: "loll-8b3ea.firebasestorage.app",
+  messagingSenderId: "953906832856",
+  appId: "1:953906832856:web:4536b15a8dc9683d743ead",
+}
+
+// Initialize Firebase directly in this route
+const app = initializeApp(firebaseConfig, 'check-roblox-linked')
+const db = getFirestore(app)
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
@@ -12,6 +28,8 @@ export async function GET(request: Request) {
   }
 
   try {
+    console.log('Checking if Roblox account is linked:', { username, userId })
+    
     // Check if any user has this Roblox username
     const usernameQuery = query(collection(db, "users"), where("robloxUsername", "==", username))
 
@@ -30,11 +48,9 @@ export async function GET(request: Request) {
       return NextResponse.json({ isLinked: true })
     }
 
-    // If we get here, the Roblox account is not linked to any Hyre account
     return NextResponse.json({ isLinked: false })
   } catch (error) {
-    console.error("Error checking Roblox account:", error)
-    return NextResponse.json({ error: "Failed to check Roblox account status" }, { status: 500 })
+    console.error("Error checking if Roblox account is linked:", error)
+    return NextResponse.json({ error: "Failed to check if Roblox account is linked" }, { status: 500 })
   }
 }
-
