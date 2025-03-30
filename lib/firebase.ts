@@ -5,13 +5,13 @@ import { getDatabase } from "firebase/database"
 
 // Use environment variables for Firebase configuration
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  apiKey: "AIzaSyCYb_AD2mPoBv6o-oaJUBv9ZWvGcQ6LY8I",
+  authDomain: "loll-8b3ea.firebaseapp.com",
+  databaseURL: "https://loll-8b3ea-default-rtdb.firebaseio.com",
+  projectId: "loll-8b3ea",
+  storageBucket: "loll-8b3ea.firebasestorage.app",
+  messagingSenderId: "953906832856",
+  appId: "1:953906832856:web:4536b15a8dc9683d743ead",
 }
 
 // Initialize Firebase
