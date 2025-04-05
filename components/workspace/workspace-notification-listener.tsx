@@ -9,37 +9,34 @@ export default function WorkspaceNotificationListener() {
   useEffect(() => {
     // Listen for workspace restricted events
     const handleWorkspaceRestricted = (event: CustomEvent) => {
-      const { workspaceName, features, reason, duration } = event.detail
+      // Extract data from the event detail, with fallbacks to prevent errors
+      const detail = event.detail || {};
+      const workspaceName = detail.workspaceName || "Workspace";
+      const restrictions = detail.restrictions || {};
+      const features = restrictions.features || [];
+      const reason = restrictions.reason || "No reason provided";
+      const duration = restrictions.duration || "";
+
+      // Safely create the message
+      let message = `Your workspace "${workspaceName}" has been restricted`;
+      if (features && Array.isArray(features) && features.length > 0) {
+        message += ` from using: ${features.join(", ")}`;
+      }
+      if (reason) {
+        message += `. Reason: ${reason}`;
+      }
 
       // Create a notification element
       const notificationElement = document.createElement("div")
       notificationElement.id = "workspace-restriction-notification"
       document.body.appendChild(notificationElement)
 
-      // Render the notification component
-      const notification = (
-        <Notification
-          message={`Your workspace "${workspaceName}" has been restricted from using: ${features.join(", ")}. Reason: ${reason}`}
-          type="warning"
-          duration={10000} // 10 seconds
-          actionText="View Details"
-          additionalData={{
-            restrictionDetails: {
-              features,
-              reason,
-              duration,
-            },
-          }}
-        />
-      )
-
-      // Mount the notification
       // Use our new black toast style
       showToast(
         "Workspace Restricted",
-        `Your workspace "${workspaceName}" has been restricted from using: ${features.join(", ")}. Reason: ${reason}`,
+        message,
         10000
-      )
+      );
     }
 
     // Listen for workspace unrestricted events
@@ -66,4 +63,3 @@ export default function WorkspaceNotificationListener() {
 
   return null // This component doesn't render anything
 }
-

@@ -14,6 +14,9 @@ import { format } from "date-fns"
 
 export default function LogsPage() {
   const { id: workspaceId } = useParams<{ id: string }>()
+  if (!workspaceId) {
+    return <div>Invalid workspace ID</div>
+  }
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
@@ -46,22 +49,22 @@ export default function LogsPage() {
       const query = searchQuery.toLowerCase()
       filtered = filtered.filter(
         (log) =>
-          log.username.toLowerCase().includes(query) ||
-          getActionDescription(log.action).toLowerCase().includes(query) ||
-          JSON.stringify(log.details).toLowerCase().includes(query),
+          (log.username && log.username.toLowerCase().includes(query)) ||
+          (log.action && getActionDescription(log.action).toLowerCase().includes(query)) ||
+          (log.details && JSON.stringify(log.details).toLowerCase().includes(query)),
       )
     }
 
     // Apply category filter
     if (selectedCategory) {
       filtered = filtered.filter((log) => {
-        if (selectedCategory === "member") return log.action.includes("member_")
-        if (selectedCategory === "workspace") return log.action.includes("workspace_")
-        if (selectedCategory === "announcement") return log.action.includes("announcement_")
-        if (selectedCategory === "inactivity") return log.action.includes("inactivity_")
-        if (selectedCategory === "session") return log.action.includes("session_")
-        if (selectedCategory === "webhook") return log.action.includes("webhook_")
-        if (selectedCategory === "automation") return log.action.includes("automation_")
+        if (selectedCategory === "member") return log.action && log.action.includes("member_")
+        if (selectedCategory === "workspace") return log.action && log.action.includes("workspace_")
+        if (selectedCategory === "announcement") return log.action && log.action.includes("announcement_")
+        if (selectedCategory === "inactivity") return log.action && log.action.includes("inactivity_")
+        if (selectedCategory === "session") return log.action && log.action.includes("session_")
+        if (selectedCategory === "webhook") return log.action && log.action.includes("webhook_")
+        if (selectedCategory === "automation") return log.action && log.action.includes("automation_")
         return true
       })
     }
@@ -88,7 +91,30 @@ export default function LogsPage() {
     setFilteredLogs(filtered)
   }, [logs, searchQuery, selectedCategory, dateRange])
 
+  // Helper function to safely format dates
+  const safeFormatDate = (timestamp: any) => {
+    try {
+      if (!timestamp) return "Unknown date";
+      
+      // Handle Firestore timestamps (which have seconds and nanoseconds)
+      if (timestamp && typeof timestamp === 'object' && 'seconds' in timestamp) {
+        const date = new Date(timestamp.seconds * 1000);
+        if (isNaN(date.getTime())) return "Invalid date";
+        return format(date, "MMM d, yyyy 'at' h:mm a");
+      }
+      
+      // Handle regular timestamps
+      const date = new Date(timestamp);
+      if (isNaN(date.getTime())) return "Invalid date";
+      return format(date, "MMM d, yyyy 'at' h:mm a");
+    } catch (error) {
+      console.error("Error formatting date:", error);
+      return "Invalid date";
+    }
+  };
+
   const getLogIcon = (action: LogAction) => {
+    if (!action) return <FileText className="h-4 w-4" />
     if (action.includes("member_")) return <User className="h-4 w-4" />
     if (action.includes("workspace_")) return <FileText className="h-4 w-4" />
     if (action.includes("announcement_")) return <AlertTriangle className="h-4 w-4" />
@@ -97,6 +123,7 @@ export default function LogsPage() {
   }
 
   const getLogColor = (action: LogAction) => {
+    if (!action) return "bg-gray-100 text-gray-800"
     if (action.includes("_created")) return "bg-green-100 text-green-800"
     if (action.includes("_updated")) return "bg-blue-100 text-blue-800"
     if (action.includes("_deleted")) return "bg-red-100 text-red-800"
@@ -110,7 +137,7 @@ export default function LogsPage() {
     const csvContent = [
       ["Timestamp", "User", "Action", "Details"],
       ...filteredLogs.map((log) => [
-        new Date(log.timestamp).toISOString(),
+        safeFormatDate(log.timestamp),
         log.username,
         getActionDescription(log.action),
         JSON.stringify(log.details),
@@ -218,10 +245,10 @@ export default function LogsPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <p className="font-medium">{getActionDescription(log.action)}</p>
-                          <Badge className={getLogColor(log.action)}>{log.action.split("_")[1]}</Badge>
+                          <Badge className={getLogColor(log.action)}>{log.action && log.action.split("_")[1] || "unknown"}</Badge>
                         </div>
                         <p className="text-sm text-muted-foreground mb-2">
-                          By {log.username} • {format(new Date(log.timestamp), "MMM d, yyyy 'at' h:mm a")}
+                          By {log.username} • {safeFormatDate(log.timestamp)}
                         </p>
                         <div className="text-sm bg-muted p-2 rounded-md overflow-x-auto">
                           <pre className="whitespace-pre-wrap">{JSON.stringify(log.details, null, 2)}</pre>
@@ -245,7 +272,7 @@ export default function LogsPage() {
               ) : (
                 <div className="space-y-2">
                   {filteredLogs
-                    .filter((log) => log.action.includes("member_"))
+                    .filter((log) => log.action && log.action.includes("member_"))
                     .map((log) => (
                       <div key={log.id} className="flex items-start gap-4 p-4 rounded-lg border">
                         <div className="p-2 rounded-full bg-muted">
@@ -254,10 +281,10 @@ export default function LogsPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
                             <p className="font-medium">{getActionDescription(log.action)}</p>
-                            <Badge className={getLogColor(log.action)}>{log.action.split("_")[1]}</Badge>
+                            <Badge className={getLogColor(log.action)}>{log.action && log.action.split("_") && log.action.split("_")[1] || "unknown"}</Badge>
                           </div>
                           <p className="text-sm text-muted-foreground mb-2">
-                            By {log.username} • {format(new Date(log.timestamp), "MMM d, yyyy 'at' h:mm a")}
+                            By {log.username} • {safeFormatDate(log.timestamp)}
                           </p>
                           <div className="text-sm bg-muted p-2 rounded-md overflow-x-auto">
                             <pre className="whitespace-pre-wrap">{JSON.stringify(log.details, null, 2)}</pre>
@@ -277,7 +304,7 @@ export default function LogsPage() {
               ) : (
                 <div className="space-y-2">
                   {filteredLogs
-                    .filter((log) => log.action.includes("session_"))
+                    .filter((log) => log.action && log.action.includes("session_"))
                     .map((log) => (
                       <div key={log.id} className="flex items-start gap-4 p-4 rounded-lg border">
                         <div className="p-2 rounded-full bg-muted">
@@ -286,10 +313,10 @@ export default function LogsPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
                             <p className="font-medium">{getActionDescription(log.action)}</p>
-                            <Badge className={getLogColor(log.action)}>{log.action.split("_")[1]}</Badge>
+                            <Badge className={getLogColor(log.action)}>{log.action && log.action.split("_") && log.action.split("_").length > 1 ? log.action.split("_")[1] : "unknown"}</Badge>
                           </div>
                           <p className="text-sm text-muted-foreground mb-2">
-                            By {log.username} • {format(new Date(log.timestamp), "MMM d, yyyy 'at' h:mm a")}
+                            By {log.username} • {safeFormatDate(log.timestamp)}
                           </p>
                           <div className="text-sm bg-muted p-2 rounded-md overflow-x-auto">
                             <pre className="whitespace-pre-wrap">{JSON.stringify(log.details, null, 2)}</pre>
@@ -309,7 +336,7 @@ export default function LogsPage() {
               ) : (
                 <div className="space-y-2">
                   {filteredLogs
-                    .filter((log) => log.action.includes("webhook_"))
+                    .filter((log) => log.action && log.action.includes("webhook_"))
                     .map((log) => (
                       <div key={log.id} className="flex items-start gap-4 p-4 rounded-lg border">
                         <div className="p-2 rounded-full bg-muted">
@@ -318,10 +345,10 @@ export default function LogsPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
                             <p className="font-medium">{getActionDescription(log.action)}</p>
-                            <Badge className={getLogColor(log.action)}>{log.action.split("_")[1]}</Badge>
+                            <Badge className={getLogColor(log.action)}>{log.action && log.action.split("_") && log.action.split("_").length > 1 ? log.action.split("_")[1] : "unknown"}</Badge>
                           </div>
                           <p className="text-sm text-muted-foreground mb-2">
-                            By {log.username} • {format(new Date(log.timestamp), "MMM d, yyyy 'at' h:mm a")}
+                            By {log.username} • {safeFormatDate(log.timestamp)}
                           </p>
                           <div className="text-sm bg-muted p-2 rounded-md overflow-x-auto">
                             <pre className="whitespace-pre-wrap">{JSON.stringify(log.details, null, 2)}</pre>
@@ -341,7 +368,7 @@ export default function LogsPage() {
               ) : (
                 <div className="space-y-2">
                   {filteredLogs
-                    .filter((log) => log.action.includes("automation_"))
+                    .filter((log) => log.action && log.action.includes("automation_"))
                     .map((log) => (
                       <div key={log.id} className="flex items-start gap-4 p-4 rounded-lg border">
                         <div className="p-2 rounded-full bg-muted">
@@ -350,10 +377,10 @@ export default function LogsPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
                             <p className="font-medium">{getActionDescription(log.action)}</p>
-                            <Badge className={getLogColor(log.action)}>{log.action.split("_")[1]}</Badge>
+                            <Badge className={getLogColor(log.action)}>{log.action && log.action.split("_") && log.action.split("_").length > 1 ? log.action.split("_")[1] : "unknown"}</Badge>
                           </div>
                           <p className="text-sm text-muted-foreground mb-2">
-                            By {log.username} • {format(new Date(log.timestamp), "MMM d, yyyy 'at' h:mm a")}
+                            By {log.username} • {safeFormatDate(log.timestamp)}
                           </p>
                           <div className="text-sm bg-muted p-2 rounded-md overflow-x-auto">
                             <pre className="whitespace-pre-wrap">{JSON.stringify(log.details, null, 2)}</pre>
@@ -370,4 +397,3 @@ export default function LogsPage() {
     </div>
   )
 }
-

@@ -12,7 +12,7 @@ import {
   limit,
 } from "firebase/firestore"
 import { db } from "./firebase"
-import { createLogEntry } from "./logs-utils"
+import { createLogEntry } from "./logging-utils"
 
 export interface Session {
   id?: string
@@ -48,6 +48,7 @@ export interface Session {
   createdAt: number
   updatedAt: number
   notes?: string
+  type?: "training" | "shift"
   attachments?: {
     name: string
     url: string
@@ -55,30 +56,68 @@ export interface Session {
   }[]
 }
 
-export async function createSession(session: Omit<Session, "createdAt" | "updatedAt">): Promise<string> {
+export async function createSession(session: Omit<Session, "id" | "createdAt" | "updatedAt">): Promise<string> {
+  console.log("createSession called with:", JSON.stringify(session, null, 2));
+  
   try {
-    const sessionRef = await addDoc(collection(db, "sessions"), {
-      ...session,
+    // Validate required fields
+    if (!session.workspaceId || !session.title || !session.host || !session.createdBy) {
+      console.error("Missing required fields for session:", { 
+        workspaceId: session.workspaceId, 
+        title: session.title,
+        host: session.host,
+        createdBy: session.createdBy
+      });
+      throw new Error("Missing required fields for session");
+    }
+    
+    // Create a clean session object with only the fields we need
+    const sessionData = {
+      workspaceId: session.workspaceId,
+      title: session.title,
+      description: session.description || "",
+      date: session.date,
+      duration: session.duration,
+      location: session.location,
+      host: session.host,
+      coHosts: session.coHosts || [],
+      trainers: session.trainers || [],
+      helpers: session.helpers || [],
+      attendees: session.attendees || [],
+      status: session.status,
+      createdBy: session.createdBy,
+      type: session.type || "training",
       createdAt: Date.now(),
       updatedAt: Date.now(),
-    })
+    };
+    
+    console.log("Adding session to Firestore:", JSON.stringify(sessionData, null, 2));
+    const sessionRef = await addDoc(collection(db, "sessions"), sessionData);
+    console.log("Session added with ID:", sessionRef.id);
 
     // Log the action
-    await createLogEntry({
-      workspaceId: session.workspaceId,
-      userId: session.createdBy,
-      username: "", // This should be filled with the actual username
-      action: "session_created",
-      details: {
-        sessionId: sessionRef.id,
-        sessionTitle: session.title,
-      },
-    })
+    try {
+      await createLogEntry({
+        type: "session_created",
+        userId: session.createdBy,
+        username: session.host?.username || "", 
+        workspaceId: session.workspaceId,
+        details: {
+          sessionId: sessionRef.id,
+          sessionTitle: session.title,
+          sessionType: session.type || "training",
+        },
+      });
+      console.log("Session creation logged successfully");
+    } catch (logError) {
+      console.error("Error logging session creation:", logError);
+      // Continue even if logging fails
+    }
 
-    return sessionRef.id
+    return sessionRef.id;
   } catch (error) {
-    console.error("Error creating session:", error)
-    throw new Error("Failed to create session")
+    console.error("Error creating session:", error);
+    throw new Error("Failed to create session: " + (error instanceof Error ? error.message : String(error)));
   }
 }
 
@@ -175,13 +214,11 @@ export async function updateSession(
 
     // Log the action
     await createLogEntry({
-      workspaceId: session.workspaceId,
+      type: "session_updated",
       userId,
-      username: "", // This should be filled with the actual username
-      action: "session_updated",
+      workspaceId: session.workspaceId,
       details: {
         sessionId,
-        sessionTitle: session.title,
         updates,
       },
     })
@@ -206,10 +243,9 @@ export async function deleteSession(sessionId: string, userId: string): Promise<
 
     // Log the action
     await createLogEntry({
-      workspaceId: session.workspaceId,
+      type: "session_deleted",
       userId,
-      username: "", // This should be filled with the actual username
-      action: "session_deleted",
+      workspaceId: session.workspaceId,
       details: {
         sessionId,
         sessionTitle: session.title,
@@ -221,7 +257,9 @@ export async function deleteSession(sessionId: string, userId: string): Promise<
   }
 }
 
-export async function startSession(sessionId: string, userId: string): Promise<void> {
+export async function startSession(sessionId: string, userId: string, username?: string): Promise<void> {
+  console.log("Starting session:", { sessionId, userId, username });
+  
   try {
     const sessionRef = doc(db, "sessions", sessionId)
     const sessionDoc = await getDoc(sessionRef)
@@ -231,26 +269,34 @@ export async function startSession(sessionId: string, userId: string): Promise<v
     }
 
     const session = sessionDoc.data() as Session
+    console.log("Found session:", session);
 
     await updateDoc(sessionRef, {
       status: "in_progress",
       updatedAt: Date.now(),
     })
+    console.log("Session status updated to in_progress");
 
     // Log the action
-    await createLogEntry({
-      workspaceId: session.workspaceId,
-      userId,
-      username: "", // This should be filled with the actual username
-      action: "session_started",
-      details: {
-        sessionId,
-        sessionTitle: session.title,
-      },
-    })
+    try {
+      await createLogEntry({
+        type: "session_started",
+        userId,
+        username: username || "", 
+        workspaceId: session.workspaceId,
+        details: {
+          sessionId,
+          sessionTitle: session.title,
+        },
+      })
+      console.log("Session start logged successfully");
+    } catch (logError) {
+      console.error("Error logging session start:", logError);
+      // Continue even if logging fails
+    }
   } catch (error) {
     console.error("Error starting session:", error)
-    throw new Error("Failed to start session")
+    throw new Error("Failed to start session: " + (error instanceof Error ? error.message : String(error)))
   }
 }
 
@@ -265,21 +311,31 @@ export async function endSession(sessionId: string, userId: string, notes?: stri
 
     const session = sessionDoc.data() as Session
 
-    await updateDoc(sessionRef, {
+    // Create an update object without undefined values
+    const updateData: Record<string, any> = {
       status: "completed",
-      notes: notes || session.notes,
       updatedAt: Date.now(),
-    })
+    }
+    
+    // Only add notes to the update if it's defined
+    if (notes !== undefined) {
+      updateData.notes = notes
+    } else if (session.notes) {
+      // Keep existing notes if available
+      updateData.notes = session.notes
+    }
+
+    await updateDoc(sessionRef, updateData)
 
     // Log the action
     await createLogEntry({
-      workspaceId: session.workspaceId,
+      type: "session_ended",
       userId,
-      username: "", // This should be filled with the actual username
-      action: "session_ended",
+      workspaceId: session.workspaceId,
       details: {
         sessionId,
         sessionTitle: session.title,
+        notes: notes || session.notes || "",
       },
     })
   } catch (error) {
@@ -323,4 +379,3 @@ export async function markAttendance(
     throw new Error("Failed to mark attendance")
   }
 }
-

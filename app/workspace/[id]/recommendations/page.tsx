@@ -29,6 +29,7 @@ import {
 } from "@/lib/recommendation-utils"
 import { getCurrentUserData } from "@/lib/auth-utils"
 import { formatDistanceToNow } from "date-fns"
+import { createLogEntry } from "@/lib/logging-utils"
 
 export default function RecommendationsPage() {
   // Get workspaceId from params and ensure it's a string
@@ -251,7 +252,7 @@ export default function RecommendationsPage() {
   }
 
   const handleCreateRecommendation = async () => {
-    if (!user || !foundUser || !recommendedRank || !justification.trim() || !workspace) {
+    if (!user || !foundUser || !recommendedRank || !justification.trim() || !workspace || !workspaceId) {
       toast({
         title: "Missing Information",
         description: "Please fill in all required fields",
@@ -290,7 +291,7 @@ export default function RecommendationsPage() {
       const currentRankObj = groupRanks.find(r => r.rank === (userCurrentRank?.rank || 0));
       const recommendedRankObj = groupRanks.find(r => r.rank === parseInt(recommendedRank));
       
-      await createRecommendation(
+      const recommendationId = await createRecommendation(
         workspaceId,
         user.uid,
         recommenderUsername,
@@ -299,11 +300,30 @@ export default function RecommendationsPage() {
         foundUser.id,
         foundUser.avatar,
         userCurrentRank?.rank || 0,
-        currentRankObj?.name || `Rank ${userCurrentRank?.rank || 0}`,
+        currentRankObj?.name || "Unknown",
         parseInt(recommendedRank),
-        recommendedRankObj?.name || `Rank ${recommendedRank}`,
+        recommendedRankObj?.name || "Unknown",
         justification
-      )
+      );
+      
+      // Log the recommendation creation
+      if (user) {
+        await createLogEntry({
+          type: "recommendation_created",
+          userId: user.uid,
+          username: recommenderUsername,
+          workspaceId: String(workspaceId),
+          details: {
+            recommendationId,
+            targetUserId: foundUser.id,
+            targetUsername: foundUser.name,
+            currentRank: userCurrentRank?.rank || 0,
+            currentRankName: currentRankObj?.name || "Unknown",
+            recommendedRank: parseInt(recommendedRank),
+            recommendedRankName: recommendedRankObj?.name || "Unknown"
+          }
+        });
+      }
       
       toast({
         title: "Recommendation Created",
@@ -332,10 +352,21 @@ export default function RecommendationsPage() {
   }
 
   const handleSupport = async (recommendationId: string) => {
-    if (!user) return
+    if (!user || !workspaceId) return
     
     try {
       await supportRecommendation(workspaceId, recommendationId, user.uid)
+      
+      // Log the support action
+      if (user) {
+        await createLogEntry({
+          type: "recommendation_supported",
+          userId: user.uid,
+          username: userData?.username || user.displayName || user.email || "",
+          workspaceId: String(workspaceId),
+          details: { recommendationId }
+        })
+      }
       
       // Update recommendations list
       setRecommendations(prevRecommendations => 
@@ -361,10 +392,21 @@ export default function RecommendationsPage() {
   }
 
   const handleUnsupport = async (recommendationId: string) => {
-    if (!user) return
+    if (!user || !workspaceId || typeof workspaceId !== 'string') return
     
     try {
       await unsupportRecommendation(workspaceId, recommendationId, user.uid)
+      
+      // Log the unsupport action
+      if (user) {
+        await createLogEntry({
+          type: "recommendation_unsupported",
+          userId: user.uid,
+          username: userData?.username || user.displayName || user.email || "",
+          workspaceId: workspaceId,
+          details: { recommendationId }
+        })
+      }
       
       // Update recommendations list
       setRecommendations(prevRecommendations => 

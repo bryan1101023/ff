@@ -18,6 +18,7 @@ import {
   Flag,
   MessageCircle,
   Award,
+  Book,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -102,6 +103,12 @@ export default function WorkspaceSidebar({ workspace, userData }: WorkspaceSideb
       label: "Inactivity Notices",
       href: `/workspace/${workspaceId}/inactivity`,
       isActive: pathname.includes(`/workspace/${workspaceId}/inactivity`),
+    },
+    {
+      icon: Book,
+      label: "Knowledge Base",
+      href: `/workspace/${workspaceId}/knowledge`,
+      isActive: pathname.includes(`/workspace/${workspaceId}/knowledge`),
     },
     {
       icon: Users,
@@ -248,9 +255,8 @@ export default function WorkspaceSidebar({ workspace, userData }: WorkspaceSideb
               {userData?.robloxUsername || userData?.email || ""}
             </p>
           </div>
-          {/* Add notification bell and flag icon */}
+          {/* Only show flag icon, notification bell moved to header */}
           <div className="flex items-center gap-1">
-            {userData?.uid && <NotificationBell userId={userData.uid} />}
             <Button 
               variant="ghost" 
               size="icon" 

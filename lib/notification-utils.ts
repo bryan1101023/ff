@@ -9,6 +9,7 @@ export async function createNotification(
   type: "system" | "admin" | "workspace" = "system",
   link?: string,
   actionText?: string,
+  workspaceId?: string,
 ) {
   try {
     // Add console log for debugging
@@ -20,14 +21,35 @@ export async function createNotification(
       return false
     }
 
-    const notificationData = {
+    // Create a properly typed notification object
+    const notificationData: {
+      userId: string;
+      message: string;
+      type: "system" | "admin" | "workspace";
+      read: boolean;
+      createdAt: any;
+      link?: string;
+      actionText?: string;
+      workspaceId?: string;
+    } = {
       userId,
       message,
       type,
       read: false,
       createdAt: serverTimestamp(),
-      link,
-      actionText,
+    }
+
+    // Only add optional fields if they are defined
+    if (link !== undefined) {
+      notificationData.link = link;
+    }
+    
+    if (actionText !== undefined) {
+      notificationData.actionText = actionText;
+    }
+
+    if (workspaceId !== undefined) {
+      notificationData.workspaceId = workspaceId;
     }
 
     // Add the notification to Firestore
@@ -77,6 +99,7 @@ export async function createWorkspaceRestrictedNotification(
       "workspace",
       `/workspace/${workspaceId}/settings`,
       "Click here to learn more",
+      workspaceId,
     )
 
     // Send real-time notification
@@ -85,13 +108,14 @@ export async function createWorkspaceRestrictedNotification(
       message,
       type: "warning",
       link: `/workspace/${workspaceId}/settings`,
-      actionText: "Click here to learn more",
+      actionText: "View Workspace Settings",
       additionalData: {
         restrictionDetails: {
           features,
           reason,
           workspaceId,
         },
+        workspaceId,
       },
     })
   } catch (error) {
@@ -142,16 +166,20 @@ export async function createWorkspaceReportRejectedNotification(userId: string):
 // Function to send a notification to all users
 export async function sendNotificationToAllUsers(message: string, type: "system" | "admin" = "admin") {
   try {
+    console.log("Sending notification to all users:", message);
+    
     // Get all users
     const usersSnapshot = await getDocs(collection(db, "users"))
 
     // Create a notification for each user
     const promises = usersSnapshot.docs.map((doc) => {
       const userId = doc.id
+      console.log(`Creating notification for user ${userId}`);
       return createNotification(userId, message, type)
     })
 
     await Promise.all(promises)
+    console.log("Successfully sent notifications to all users");
     return true
   } catch (error) {
     console.error("Error sending notification to all users:", error)

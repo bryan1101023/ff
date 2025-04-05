@@ -20,6 +20,7 @@ import {
 } from "firebase/firestore"
 import { formatDistanceToNow } from "date-fns"
 import { useRouter } from "next/navigation"
+import { AlertTriangle, Info } from "lucide-react"
 
 // Update the NotificationItem interface to include actionText
 interface NotificationItem {
@@ -36,7 +37,8 @@ interface NotificationItem {
 
 interface Notification {
   id: string
-  userId: string
+  workspaceId?: string
+  userId?: string
   message: string
   read: boolean
   createdAt: Timestamp
@@ -45,58 +47,65 @@ interface Notification {
   actionText?: string
 }
 
-export default function NotificationBell({ userId }: { userId: string }) {
-  const [isOpen, setIsOpen] = useState(false)
-  const [notifications, setNotifications] = useState<Notification[]>([])
+export default function NotificationBell({ workspaceId, userId }: { workspaceId?: string; userId?: string }) {
+  const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
+  const [isOpen, setIsOpen] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
-    if (!userId) {
-      console.log("No user ID provided to NotificationBell")
+    // Check if we have either workspaceId or userId
+    if (!workspaceId && !userId) {
+      console.log("No workspace ID or user ID provided to NotificationBell")
       return
     }
 
-    console.log(`Setting up notification listener for user ${userId}`)
+    console.log(`Setting up notification listener for ${workspaceId ? 'workspace '+workspaceId : 'user '+userId}`)
 
-    // Query notifications for this user
-    const q = query(
-      collection(db, "notifications"),
-      where("userId", "==", userId),
-      orderBy("createdAt", "desc"),
-      limit(20),
-    )
-
-    const unsubscribe = onSnapshot(
-      q,
-      (querySnapshot) => {
-        console.log(`Notification snapshot received, count: ${querySnapshot.size}`)
-
-        const notificationsList: Notification[] = []
-        querySnapshot.forEach((doc) => {
-          const data = doc.data()
-          console.log(`Notification data:`, data)
-
-          notificationsList.push({
-            id: doc.id,
-            ...data,
-          } as Notification)
-        })
-
-        setNotifications(notificationsList)
-        setUnreadCount(notificationsList.filter((n) => !n.read).length)
-
-        console.log(
-          `Total notifications: ${notificationsList.length}, Unread: ${notificationsList.filter((n) => !n.read).length}`,
+    // Query notifications based on what we have (workspaceId or userId)
+    const q = workspaceId
+      ? query(
+          collection(db, "notifications"),
+          where("workspaceId", "==", workspaceId),
+          orderBy("createdAt", "desc"),
+          limit(20),
         )
-      },
-      (error) => {
-        console.error("Error fetching notifications:", error)
-      },
-    )
+      : query(
+          collection(db, "notifications"),
+          where("userId", "==", userId),
+          orderBy("createdAt", "desc"),
+          limit(20),
+        )
+
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const notificationItems: NotificationItem[] = []
+      let newUnreadCount = 0
+
+      querySnapshot.forEach((doc) => {
+        const data = doc.data() as Notification
+        if (!data.read) {
+          newUnreadCount++
+        }
+
+        // Convert Notification to NotificationItem
+        notificationItems.push({
+          id: doc.id,
+          title: data.type.charAt(0).toUpperCase() + data.type.slice(1),
+          message: data.message,
+          type: data.type === "admin" ? "error" : data.type === "system" ? "info" : "white",
+          read: data.read,
+          createdAt: data.createdAt,
+          link: data.link,
+          actionText: data.actionText,
+        })
+      })
+
+      setNotifications(notificationItems)
+      setUnreadCount(newUnreadCount)
+    })
 
     return () => unsubscribe()
-  }, [userId])
+  }, [workspaceId, userId])
 
   const markAsRead = async (notificationId: string, link?: string) => {
     try {
@@ -148,6 +157,19 @@ export default function NotificationBell({ userId }: { userId: string }) {
     }
   }
 
+  const getNotificationTypeColor = (type: string) => {
+    switch (type) {
+      case 'admin':
+        return 'text-red-500';
+      case 'system':
+        return 'text-blue-500';
+      case 'workspace':
+        return 'text-amber-500';
+      default:
+        return 'text-muted-foreground';
+    }
+  };
+
   return (
     <div className="relative">
       <Button variant="ghost" size="icon" onClick={() => setIsOpen(!isOpen)} className="relative hover:bg-white/10">
@@ -185,39 +207,45 @@ export default function NotificationBell({ userId }: { userId: string }) {
                   </div>
                 ) : (
                   <div>
-                    {notifications.map((notification) => (
+                    {notifications.map((notification, index) => (
                       <motion.div
                         key={notification.id}
                         initial={{ opacity: 0, y: 5 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className={`p-3 border-b border-white/10 hover:bg-white/5 transition-colors ${!notification.read ? "bg-white/[0.03]" : ""}`}
+                        className={`flex items-start gap-2 p-3 ${notification.read ? 'opacity-70' : 'opacity-100'} ${index !== 0 ? 'border-t' : ''}`}
                         onClick={() => !notification.read && markAsRead(notification.id, notification.link)}
                       >
-                        <div className="flex gap-3">
-                          <div className={`w-2 h-2 rounded-full mt-2 ${getNotificationColor(notification.type)}`} />
-                          <div className="flex-1">
-                            <p className={`text-sm ${!notification.read ? "font-medium text-white" : "text-white/80"}`}>
-                              {notification.message}
-                            </p>
-                            <div className="flex justify-between items-center mt-1">
-                              <p className="text-xs text-muted-foreground">{formatTime(notification.createdAt)}</p>
-                              {notification.actionText && notification.link && (
-                                <Button
-                                  variant="link"
-                                  size="sm"
-                                  className="text-xs p-0 h-auto text-blue-400 hover:text-blue-300"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    markAsRead(notification.id, notification.link)
-                                  }}
-                                >
-                                  {notification.actionText}
-                                </Button>
-                              )}
-                            </div>
-                          </div>
-                          {!notification.read && <div className="w-2 h-2 rounded-full bg-blue-500 self-start mt-2" />}
+                        <div className={`mt-0.5 rounded-full p-1 ${getNotificationTypeColor(notification.type)}`}>
+                          {notification.type === 'error' || notification.type === 'warning' ? (
+                            <AlertTriangle className="h-4 w-4" />
+                          ) : notification.type === 'info' || notification.type === 'success' ? (
+                            <Info className="h-4 w-4" />
+                          ) : (
+                            <Bell className="h-4 w-4" />
+                          )}
                         </div>
+                        <div className="flex-1">
+                          <p className={`text-sm ${!notification.read ? "font-medium text-white" : "text-white/80"}`}>
+                            {notification.message}
+                          </p>
+                          <div className="flex justify-between items-center mt-1">
+                            <p className="text-xs text-muted-foreground">{formatTime(notification.createdAt)}</p>
+                            {notification.actionText && notification.link && (
+                              <Button
+                                variant="link"
+                                size="sm"
+                                className="text-xs p-0 h-auto text-blue-400 hover:text-blue-300"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  markAsRead(notification.id, notification.link)
+                                }}
+                              >
+                                {notification.actionText}
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                        {!notification.read && <div className="w-2 h-2 rounded-full bg-blue-500 self-start mt-2" />}
                       </motion.div>
                     ))}
                   </div>
@@ -230,4 +258,3 @@ export default function NotificationBell({ userId }: { userId: string }) {
     </div>
   )
 }
-

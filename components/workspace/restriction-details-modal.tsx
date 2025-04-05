@@ -4,13 +4,12 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { AlertTriangle, X } from "lucide-react"
-import { Label } from "@/components/ui/label"
+import { AlertTriangle, Ban, Calendar, Clock, Info, Shield, X } from "lucide-react"
+import { motion } from "framer-motion"
 
 interface RestrictionDetailsModalProps {
   isOpen: boolean
@@ -24,62 +23,120 @@ interface RestrictionDetailsModalProps {
   }
 }
 
-// Make sure the modal properly displays all restriction details including duration
+// Modern restriction details modal with animations and improved UI
 export default function RestrictionDetailsModal({ isOpen, onClose, restrictions }: RestrictionDetailsModalProps) {
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-amber-500">
-            <AlertTriangle className="h-5 w-5" />
-            Workspace Restrictions
-          </DialogTitle>
-          <DialogDescription>Your workspace has been restricted from using certain features</DialogDescription>
-        </DialogHeader>
+      <DialogContent className="sm:max-w-lg p-0 gap-0 overflow-hidden border-0 shadow-xl">
+        <div className="bg-gradient-to-r from-amber-500/20 to-red-500/20 dark:from-amber-900/40 dark:to-red-900/40 p-6">
+          <DialogHeader className="gap-2">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ duration: 0.3 }}
+              className="flex items-center gap-2"
+            >
+              <div className="bg-amber-100 dark:bg-amber-900/50 p-2 rounded-full">
+                <Shield className="h-5 w-5 text-amber-500" />
+              </div>
+              <DialogTitle className="text-xl font-bold">Workspace Restrictions</DialogTitle>
+            </motion.div>
+            <DialogDescription className="text-base opacity-90">
+              Your workspace has been restricted from using certain features
+            </DialogDescription>
+          </DialogHeader>
+        </div>
 
-        <div className="py-4 space-y-4">
-          <div className="space-y-2">
-            <Label className="text-sm font-medium">Restricted Features</Label>
+        <div className="p-6 space-y-6">
+          <motion.div 
+            initial={{ y: 10, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.1, duration: 0.3 }}
+            className="space-y-3"
+          >
+            <h3 className="text-sm font-medium flex items-center gap-2">
+              <Ban className="h-4 w-4 text-amber-500" />
+              Restricted Features
+            </h3>
             <div className="space-y-2">
-              {restrictions.features.map((feature: string) => (
-                <div key={feature} className="flex items-center space-x-2">
-                  <X className="h-4 w-4 text-amber-500" />
-                  <span className="text-sm">{formatFeatureName(feature)}</span>
-                </div>
+              {restrictions.features.map((feature: string, index) => (
+                <motion.div 
+                  key={feature} 
+                  initial={{ x: -10, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  transition={{ delay: 0.1 + (index * 0.05), duration: 0.3 }}
+                  className="flex items-center p-3 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900/50"
+                >
+                  <X className="h-4 w-4 text-amber-500 mr-2 flex-shrink-0" />
+                  <span className="text-sm font-medium">{formatFeatureName(feature)}</span>
+                </motion.div>
               ))}
             </div>
-          </div>
+          </motion.div>
 
-          <div className="space-y-2">
-            <Label className="text-sm font-medium">Reason</Label>
-            <div className="p-3 bg-muted rounded-md text-sm">{restrictions.reason}</div>
-          </div>
+          <motion.div 
+            initial={{ y: 10, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.2, duration: 0.3 }}
+            className="space-y-3"
+          >
+            <h3 className="text-sm font-medium flex items-center gap-2">
+              <Info className="h-4 w-4 text-blue-500" />
+              Reason
+            </h3>
+            <div className="p-4 bg-blue-50 dark:bg-blue-950/30 rounded-md text-sm border border-blue-100 dark:border-blue-900/50">
+              {restrictions.reason}
+            </div>
+          </motion.div>
 
           {restrictions.duration && (
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">Duration</Label>
-              <div className="p-3 bg-muted rounded-md text-sm">
-                {restrictions.duration}
+            <motion.div 
+              initial={{ y: 10, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.3, duration: 0.3 }}
+              className="space-y-3"
+            >
+              <h3 className="text-sm font-medium flex items-center gap-2">
+                <Clock className="h-4 w-4 text-purple-500" />
+                Duration
+              </h3>
+              <div className="p-4 bg-purple-50 dark:bg-purple-950/30 rounded-md text-sm border border-purple-100 dark:border-purple-900/50">
+                <div className="font-medium">{restrictions.duration}</div>
                 {restrictions.expiresAt && (
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    Expires on: {new Date(restrictions.expiresAt.toDate()).toLocaleDateString()}
+                  <div className="mt-2 text-sm flex items-center gap-2 text-purple-700 dark:text-purple-300">
+                    <Calendar className="h-3.5 w-3.5" />
+                    Expires on: {formatDate(restrictions.expiresAt)}
                   </div>
                 )}
               </div>
-            </div>
+            </motion.div>
           )}
 
-          <div className="space-y-2">
-            <Label className="text-sm font-medium">Applied On</Label>
-            <div className="p-3 bg-muted rounded-md text-sm">
-              {restrictions.appliedAt ? new Date(restrictions.appliedAt.toDate()).toLocaleString() : "Unknown"}
+          <motion.div 
+            initial={{ y: 10, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.4, duration: 0.3 }}
+            className="space-y-3"
+          >
+            <h3 className="text-sm font-medium flex items-center gap-2">
+              <Calendar className="h-4 w-4 text-gray-500" />
+              Applied On
+            </h3>
+            <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-md text-sm border border-gray-100 dark:border-gray-700">
+              {formatDate(restrictions.appliedAt)}
             </div>
-          </div>
+          </motion.div>
         </div>
 
-        <DialogFooter>
-          <Button onClick={onClose}>Close</Button>
-        </DialogFooter>
+        <div className="p-4 border-t bg-muted/30 flex justify-end">
+          <Button 
+            onClick={onClose} 
+            className="px-6"
+            variant="default"
+          >
+            Close
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   )
@@ -98,3 +155,19 @@ function formatFeatureName(feature: string): string {
   return featureMap[feature] || feature
 }
 
+// Helper function to safely handle Firestore timestamps or Date objects
+function formatDate(dateValue: Date | { toDate: () => Date } | null | undefined): string {
+  if (!dateValue) return "Unknown";
+  
+  // Handle Firestore timestamp
+  if (typeof dateValue === 'object' && 'toDate' in dateValue) {
+    return dateValue.toDate().toLocaleString();
+  }
+  
+  // Handle regular Date object
+  if (dateValue instanceof Date) {
+    return dateValue.toLocaleString();
+  }
+  
+  return "Invalid date";
+}

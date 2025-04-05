@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button"
 import { ChevronLeft, BadgeCheck, AlertTriangle, Loader2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import NotificationBell from "@/components/ui/notification-bell"
+import { ChangelogPopup } from "@/components/ui/changelog-popup"
+import RestrictedPage from "@/components/ui/restricted-page"
 
 import React, { use } from "react"
 import { useState, useEffect, useMemo } from "react"
@@ -43,6 +45,8 @@ export default function WorkspaceLayout({
   const [workspace, setWorkspace] = useState<any>(null)
   const [userData, setUserData] = useState<any>(null)
   const [restrictions, setRestrictions] = useState<any>(null)
+  const [showChangelog, setShowChangelog] = useState(false)
+  const [currentPath, setCurrentPath] = useState("");
   const router = useRouter()
   
   // Get the workspace ID safely
@@ -123,10 +127,12 @@ export default function WorkspaceLayout({
                 // Update state
                 setRestrictions(newRestrictions);
                 
-                // If user is on a now-restricted page, redirect them
+                // If user is on a now-restricted page, don't redirect them
+                // We'll show the restricted page component instead
                 const currentPath = window.location.pathname;
                 if (isFeatureRestricted(currentPath, newRestrictions)) {
-                  router.push(`/workspace/${workspaceId}`);
+                  // Update the UI to show the restricted page without redirecting
+                  setRestrictions(newRestrictions);
                 }
               }
             } else {
@@ -149,6 +155,17 @@ export default function WorkspaceLayout({
             console.error("Error listening to workspace restrictions:", error);
           }
         );
+
+        // Show changelog popup when entering workspace
+        // Check local storage to see if user has seen the latest changelog
+        const lastSeenChangelog = localStorage.getItem(`changelog-${workspaceId}`) || '0'
+        const currentChangelog = '20250404' // Update this when new changes are added
+        
+        if (lastSeenChangelog !== currentChangelog) {
+          setShowChangelog(true)
+          // Save that user has seen this changelog
+          localStorage.setItem(`changelog-${workspaceId}`, currentChangelog)
+        }
 
         // Check if user is a member of this workspace
         if (workspaceData.members.includes(authUser.uid)) {
@@ -211,55 +228,97 @@ export default function WorkspaceLayout({
     }
   }, [workspaceId, router])
 
+  // Update current path when it changes
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      // Set initial path
+      setCurrentPath(window.location.pathname);
+      
+      // Listen for path changes
+      const handleRouteChange = () => {
+        setCurrentPath(window.location.pathname);
+      };
+      
+      // Add event listener for popstate (browser back/forward)
+      window.addEventListener('popstate', handleRouteChange);
+      
+      // Create a MutationObserver to detect URL changes from React Router
+      const observer = new MutationObserver(() => {
+        if (window.location.pathname !== currentPath) {
+          setCurrentPath(window.location.pathname);
+        }
+      });
+      
+      // Observe the document for changes
+      observer.observe(document, { subtree: true, childList: true });
+      
+      return () => {
+        window.removeEventListener('popstate', handleRouteChange);
+        observer.disconnect();
+      };
+    }
+  }, [currentPath]);
+
   // Check if the current path is restricted
   const isFeatureRestricted = (pathname: string, checkRestrictions: any = null) => {
     // Use provided restrictions or fall back to state
     const activeRestrictions = checkRestrictions || restrictions;
-    if (!activeRestrictions || !activeRestrictions.features) return false
+    if (!activeRestrictions || !activeRestrictions.features || activeRestrictions.features.length === 0) return false;
 
     // Extract the feature part from the path
     const pathParts = pathname.split("/").filter(Boolean);
     
     // For paths like /workspace/123/feature
     // pathParts would be ['workspace', '123', 'feature']
-    let path = null;
-    if (pathParts.length >= 3 && pathParts[0] === 'workspace') {
-      // Get the feature part (last segment)
-      path = pathParts[pathParts.length - 1];
+    if (pathParts.length < 3 || pathParts[0] !== 'workspace') {
+      return false;
     }
     
-    // If we're at the workspace root, path will be the workspace ID or null
+    // Get the feature part (last segment)
+    const path = pathParts[pathParts.length - 1];
+    
+    // If we're at the workspace root, path will be the workspace ID
     // In this case, no features are restricted
-    if (!path || path === workspaceId) {
+    if (path === workspaceId) {
       return false;
     }
 
-    if (activeRestrictions.features.includes("inactivityNotice") && (path === "inactivity" || path === "manage")) {
-      return true
+    console.log("Checking if path is restricted:", path, "Restrictions:", activeRestrictions.features);
+    
+    // Check specific feature restrictions
+    if (activeRestrictions.features.includes("inactivityNotice") && 
+        (path === "inactivity" || path.startsWith("inactivity/"))) {
+      console.log("Inactivity notice is restricted");
+      return true;
     }
 
-    if (activeRestrictions.features.includes("timeTracking") && path === "time-tracking") {
-      return true
+    if (activeRestrictions.features.includes("timeTracking") && 
+        (path === "time-tracking" || path.startsWith("time-tracking/"))) {
+      console.log("Time tracking is restricted");
+      return true;
     }
 
-    if (activeRestrictions.features.includes("automation") && path === "automation") {
-      return true
+    if (activeRestrictions.features.includes("automation") && 
+        (path === "automation" || path.startsWith("automation/"))) {
+      console.log("Automation is restricted");
+      return true;
     }
 
-    if (activeRestrictions.features.includes("announcements") && path === "announcements") {
-      return true
+    if (activeRestrictions.features.includes("announcements") && 
+        (path === "announcements" || path.startsWith("announcements/"))) {
+      console.log("Announcements are restricted");
+      return true;
     }
 
-    if (activeRestrictions.features.includes("memberManagement") && path === "members") {
-      return true
+    if (activeRestrictions.features.includes("memberManagement") && 
+        (path === "members" || path.startsWith("members/"))) {
+      console.log("Member management is restricted");
+      return true;
     }
 
-    return false
-  }
+    return false;
+  };
 
-  // Get current path and check if it's restricted
-  const currentPath = typeof window !== "undefined" ? window.location.pathname : ""
-  
   // Force this to be recalculated whenever restrictions change or path changes
   const isCurrentFeatureRestricted = useMemo(() => {
     // Only check for restrictions if we have restrictions and a valid path
@@ -281,22 +340,27 @@ export default function WorkspaceLayout({
         const event = new CustomEvent('workspace-restricted', { 
           detail: { 
             workspaceId,
-            restrictions 
+            workspaceName: workspace?.name || "Workspace",
+            restrictions: {
+              features: restrictions?.features || [],
+              reason: restrictions?.reason || "",
+              duration: restrictions?.duration || ""
+            }
           } 
         });
         window.dispatchEvent(event);
         
         // Show toast notification
         const { showToast } = require('@/lib/notification-utils');
-        showToast({
-          title: "Feature Restricted",
-          description: `This feature has been restricted by an administrator. ${restrictions?.reason || ''}`,
-          variant: "black",
-        });
+        showToast(
+          "Feature Restricted",
+          `This feature has been restricted by an administrator. ${restrictions?.reason || ''}`,
+          5000
+        );
       }
       
-      // Redirect to workspace home
-      router.push(`/workspace/${workspaceId}`);
+      // No longer redirecting to workspace home
+      // Instead, we'll show the restricted page component in the render function
     }
   }, [isCurrentFeatureRestricted, isLoading, workspace, workspaceId, router, restrictions])
 
@@ -334,45 +398,50 @@ export default function WorkspaceLayout({
     )
   }
 
-  // Show restricted feature message if the current feature is restricted
-  // Also check that we have restrictions loaded
+  // Show restricted page if the current feature is restricted
   if (isCurrentFeatureRestricted && restrictions && restrictions.features) {
+    // Get the current feature name from the path
+    const currentFeature = getCurrentFeatureName(currentPath);
+    
     return (
-      <ThemeProvider attribute="class" defaultTheme={workspace.theme || "light"}>
-        <div className={`${workspace.theme === "dark" ? "dark" : ""} min-h-screen bg-background text-foreground`}>
-          <div className="flex flex-col md:flex-row h-screen overflow-hidden">
-            <WorkspaceSidebar workspace={workspace} userData={userData} />
-            <div className="flex-1 overflow-auto">
-              <div className="flex flex-col items-center justify-center h-full p-4 sm:p-6">
-                <div className="w-full max-w-md text-center px-4">
-                  <div className="bg-amber-500/10 p-3 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
-                    <AlertTriangle className="h-8 w-8 text-amber-500" />
-                  </div>
-                  <h2 className="text-xl sm:text-2xl font-bold mb-2">Feature Restricted</h2>
-                  <p className="text-sm sm:text-base text-muted-foreground mb-4">This feature has been restricted by an administrator.</p>
-                  <div className="bg-muted p-3 sm:p-4 rounded-lg mb-4 text-left">
-                    <p className="font-medium mb-1">Reason:</p>
-                    <p className="text-sm text-muted-foreground">{restrictions?.reason || "No reason provided"}</p>
-
-                    {restrictions?.duration && (
-                      <>
-                        <p className="font-medium mt-3 mb-1">Duration:</p>
-                        <p className="text-sm text-muted-foreground">{restrictions.duration}</p>
-                      </>
-                    )}
-                  </div>
-                  <Button
-                    onClick={() => router.push(`/workspace/${workspaceId}`)}
-                    className="bg-primary hover:bg-primary/90 w-full sm:w-auto"
-                  >
-                    Return to Workspace
-                  </Button>
+      <div className="min-h-screen bg-background">
+        <div className="flex flex-col min-h-screen">
+          <header className="sticky top-0 z-30 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+            <div className="container flex h-14 items-center">
+              <div className="mr-4 flex">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="mr-2"
+                  onClick={() => router.push(`/workspace/${workspaceId}`)}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  <span className="sr-only">Back</span>
+                </Button>
+                <div className="flex items-center gap-2">
+                  <div className="font-semibold">{workspace?.name || "Workspace"}</div>
+                  {workspace?.verified && (
+                    <Badge variant="outline" className="gap-1 px-1.5 border-green-200 bg-green-100 text-green-700 dark:border-green-900 dark:bg-green-900/30 dark:text-green-400">
+                      <BadgeCheck className="h-3.5 w-3.5" />
+                      <span className="text-xs">Verified</span>
+                    </Badge>
+                  )}
                 </div>
               </div>
+              <div className="ml-auto flex items-center gap-2">
+                {/* Notification bell moved to header with workspace name */}
+              </div>
             </div>
-          </div>
+          </header>
+          <main className="flex-1">
+            <RestrictedPage 
+              workspaceId={workspaceId} 
+              restrictions={restrictions} 
+              featureName={currentFeature}
+            />
+          </main>
         </div>
-      </ThemeProvider>
+      </div>
     )
   }
 
@@ -397,28 +466,47 @@ export default function WorkspaceLayout({
                     <ChevronLeft className="h-5 w-5" />
                   </Button>
                 </div>
-                <h1 className="text-xl font-semibold truncate">{workspace?.name || "Workspace"}</h1>
-                {workspace?.isVerified && (
-                  <Badge variant="outline" className="ml-2 bg-blue-500/10 text-blue-500 border-blue-500/20 hidden sm:flex">
-                    <BadgeCheck className="h-3 w-3 mr-1" />
-                    Verified
+                <h1 className="text-xl font-semibold truncate flex items-center gap-2">
+                  {workspace?.name || "Workspace"}
+                  {workspace?.isVerified && (
+                    <Badge variant="outline" className="ml-2 bg-blue-500/10 text-blue-500 border-blue-500/20 hidden sm:flex">
+                      <BadgeCheck className="h-3 w-3 mr-1" />
+                      Verified
+                    </Badge>
+                  )}
+                  {/* Add notification bell next to workspace name */}
+                  <NotificationBell workspaceId={workspaceId} />
+                </h1>
+                {isCurrentFeatureRestricted && (
+                  <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20 text-xs sm:text-sm">
+                    <AlertTriangle className="h-3 w-3 mr-1" />
+                    <span className="hidden sm:inline">Restricted Feature</span>
+                    <span className="sm:hidden">Restricted</span>
                   </Badge>
                 )}
               </div>
-              {isCurrentFeatureRestricted && (
-                <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20 text-xs sm:text-sm">
-                  <AlertTriangle className="h-3 w-3 mr-1" />
-                  <span className="hidden sm:inline">Restricted Feature</span>
-                  <span className="sm:hidden">Restricted</span>
-                </Badge>
-              )}
             </header>
             
             {/* Main content */}
             <div className="flex-1 overflow-auto p-2 sm:p-4">{children}</div>
           </div>
         </div>
+        {showChangelog && (
+          <ChangelogPopup
+            isOpen={showChangelog}
+            onClose={() => setShowChangelog(false)}
+          />
+        )}
       </div>
     </ThemeProvider>
   )
+}
+
+// Helper function to get the current feature name from the path
+function getCurrentFeatureName(path: string): string {
+  const pathParts = path.split("/").filter(Boolean);
+  if (pathParts.length >= 3 && pathParts[0] === 'workspace') {
+    return pathParts[pathParts.length - 1] || "feature";
+  }
+  return "feature";
 }

@@ -102,7 +102,9 @@ export async function getWorkspaceLogs(
 }
 
 // Helper function to get a human-readable description of a log action
-export function getActionDescription(action: LogAction): string {
+export function getActionDescription(action?: LogAction): string {
+  if (!action) return "Performed an action";
+  
   const actionMap: Record<LogAction, string> = {
     member_added: "Added a member",
     member_removed: "Removed a member",
@@ -132,4 +134,3 @@ export function getActionDescription(action: LogAction): string {
 
   return actionMap[action] || "Performed an action"
 }
-

@@ -43,8 +43,7 @@ export default function InactivityPage({ params }: { params: { id: string } }) {
           // Check if inactivity notices are restricted
           if (restrictions.features && restrictions.features.includes("inactivityNotice")) {
             setIsRestricted(true);
-            // Redirect to workspace home
-            router.push(`/workspace/${workspaceId}`);
+            // No longer redirecting - the layout will handle showing the restricted page
           } else {
             setIsRestricted(false);
           }
@@ -429,4 +428,3 @@ export default function InactivityPage({ params }: { params: { id: string } }) {
     </div>
   )
 }
-
