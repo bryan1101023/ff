@@ -59,6 +59,7 @@ export default function WorkspaceLayout({
         router.push("/beta")
         return
       }
+      
 
       try {
         // Get user data
